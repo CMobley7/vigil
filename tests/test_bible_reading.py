@@ -274,6 +274,12 @@ class TestReadFileSafe:
         p.write_text("Hello World")
         assert _read_file_safe(p) == "Hello World"
 
+    def test_os_error_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "locked.md"
+        p.write_text("content")
+        with patch.object(Path, "read_text", side_effect=OSError("Permission denied")):
+            assert _read_file_safe(p) is None
+
 
 # ---------------------------------------------------------------------------
 # extract_today_reading — malformed JSON

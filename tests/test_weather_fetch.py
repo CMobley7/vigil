@@ -138,3 +138,11 @@ class TestEnvVarDefaults:
 
         assert weather_fetch.LATITUDE == pytest.approx(35.2271)
         assert weather_fetch.LONGITUDE == pytest.approx(-80.8431)
+
+
+class TestSafeFloatInvalidInput:
+    def test_non_numeric_exits(self) -> None:
+        from weather_fetch import _safe_float
+
+        with pytest.raises(SystemExit):
+            _safe_float("_TEST_BAD_VAR", "not_a_number")

@@ -57,14 +57,14 @@ jobs:
         run: uv sync --dev
 
       - name: Mypy
-        run: uv run mypy financial_monitor.py weather_fetch.py bible_reading.py
+        run: uv run mypy financial_monitor.py weather_fetch.py bible_reading.py fm_config.py fm_fetchers.py fm_evaluators.py
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
