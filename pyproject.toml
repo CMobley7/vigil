@@ -1,0 +1,51 @@
+[project]
+name = "openclaw-scripts"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "snaptrade-python-sdk",
+    "ofxtools",
+    "fredapi",
+    "yfinance",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "pip-audit",
+
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+exclude = ["tmp", ".venv"]
+lint.select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "DTZ", "T20", "SIM", "PT", "PIE", "N", "ANN", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "SIM300"]
+"financial_monitor.py" = ["T201"]
+"weather_fetch.py" = ["T201"]
+"bible_reading.py" = ["T201"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "ofxtools.*",
+    "snaptrade_client.*",
+    "yfinance.*",
+    "fredapi.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
