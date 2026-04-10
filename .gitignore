@@ -8,6 +8,7 @@ __pycache__/
 
 # Coverage
 .coverage
+coverage.xml
 htmlcov/
 
 # Caches
@@ -22,5 +23,11 @@ htmlcov/
 # OS
 .DS_Store
 
+# Secrets
+.env
+
 # Temp
 tmp/
+
+# Agent skills (third-party)
+.agents/

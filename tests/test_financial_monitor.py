@@ -4,27 +4,32 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from financial_monitor import (
     build_daily_summary,
+    main,
+)
+from fm_evaluators import (
     evaluate_account_red_flags,
     evaluate_hyperscaler_capex,
+    evaluate_ibit_concentration,
+    evaluate_inflation_trigger,
     evaluate_mid_year_triggers,
     evaluate_portfolio_drift,
     evaluate_recession_signals,
-    main,
-    parse_checklist,
 )
+from fm_fetchers import parse_checklist
 
 # --- Fixtures ---
 
 
 def _mock_brokerage_data(
-    positions: list[dict] | None = None,
-) -> dict:
+    positions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build mock brokerage data (SnapTrade output)."""
     if positions is None:
         positions = [
@@ -57,9 +62,9 @@ def _mock_brokerage_data(
 
 
 def _mock_bank_data(
-    transactions: list[dict] | None = None,
-    balances: list[dict] | None = None,
-) -> dict:
+    transactions: list[dict[str, Any]] | None = None,
+    balances: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build mock bank data (OFX output)."""
     if transactions is None:
         transactions = [
@@ -539,7 +544,7 @@ class TestNonOfxSourceSkipped:
 # ---------------------------------------------------------------------------
 
 
-def _base_market_data() -> dict:
+def _base_market_data() -> dict[str, dict[str, Any]]:
     """Build minimal market data with all tickers safe (no triggers)."""
     return {
         ticker: {
@@ -819,6 +824,12 @@ class TestParseChecklist:
         result = parse_checklist("/nonexistent/checklist.md")
         assert result == {"red_flags": [], "accounts": []}
 
+    def test_content_without_headings_warns(self, tmp_path: Path) -> None:
+        p = tmp_path / "checklist.md"
+        p.write_text("Some content without proper headings\n")
+        result = parse_checklist(str(p))
+        assert result == {"red_flags": [], "accounts": []}
+
 
 # ---------------------------------------------------------------------------
 # main() status-setting branches
@@ -985,3 +996,172 @@ class TestMainStatusPartialDataWithHighAlerts:
         captured = capsys.readouterr()
         output = json.loads(captured.out)
         assert output["status"] == "partial_data"
+
+
+# ---------------------------------------------------------------------------
+# fm_config — _safe_json / _safe_int error paths
+# ---------------------------------------------------------------------------
+
+
+class TestSafeJsonInvalidInput:
+    def test_invalid_json_exits(self) -> None:
+        from fm_config import _safe_json
+
+        with pytest.raises(SystemExit):
+            _safe_json("_TEST_BAD_VAR", "{invalid}")
+
+
+class TestSafeIntInvalidInput:
+    def test_non_numeric_exits(self) -> None:
+        from fm_config import _safe_int
+
+        with pytest.raises(SystemExit):
+            _safe_int("_TEST_BAD_VAR", "not_an_int")
+
+
+# ---------------------------------------------------------------------------
+# evaluate_inflation_trigger
+# ---------------------------------------------------------------------------
+
+
+class TestInflationAboveThreshold:
+    def test_cpi_above_3_pct_triggers_alert(self) -> None:
+        recession_data = {
+            "unemployment_rate": {"value": 3.5, "date": "2026-03-01"},
+            "yield_curve_spread": {"value": 0.5, "date": "2026-03-01"},
+            "sahm_rule": {"value": 0.2, "date": "2026-03-01"},
+            "inflation": {
+                "value": 3.5,
+                "date": "2026-03-01",
+                "threshold": 3.0,
+                "above_threshold": True,
+            },
+        }
+        alerts = evaluate_inflation_trigger(recession_data)
+        assert len(alerts) == 1
+        assert alerts[0]["severity"] == "HIGH"
+        assert alerts[0]["category"] == "trigger"
+        assert "3.50%" in alerts[0]["details"]
+        assert "VEA" in alerts[0]["action"]
+
+
+class TestInflationBelowThreshold:
+    def test_cpi_below_3_pct_no_alert(self) -> None:
+        recession_data = {
+            "inflation": {
+                "value": 2.5,
+                "date": "2026-03-01",
+                "threshold": 3.0,
+                "above_threshold": False,
+            },
+        }
+        alerts = evaluate_inflation_trigger(recession_data)
+        assert alerts == []
+
+
+class TestInflationNoneData:
+    def test_none_returns_empty(self) -> None:
+        assert evaluate_inflation_trigger(None) == []
+
+
+class TestInflationMissingKey:
+    def test_no_inflation_key_returns_empty(self) -> None:
+        recession_data = {
+            "unemployment_rate": {"value": 3.5, "date": "2026-03-01"},
+        }
+        alerts = evaluate_inflation_trigger(recession_data)
+        assert alerts == []
+
+
+# ---------------------------------------------------------------------------
+# evaluate_ibit_concentration
+# ---------------------------------------------------------------------------
+
+
+class TestIbitAboveMaxPct:
+    def test_ibit_at_12_pct_triggers_trim(self) -> None:
+        brokerage = {
+            "accounts": [
+                {
+                    "name": "PCRA - ROTH",
+                    "category": "Roth",
+                    "total_value": 100000,
+                    "holdings": [
+                        {
+                            "ticker": "IBIT",
+                            "shares": 100,
+                            "price": 120.0,
+                            "market_value": 12000.0,
+                            "actual_pct": 12.0,
+                        },
+                        {
+                            "ticker": "SMH",
+                            "shares": 200,
+                            "price": 440.0,
+                            "market_value": 88000.0,
+                            "actual_pct": 88.0,
+                        },
+                    ],
+                },
+            ],
+        }
+        alerts = evaluate_ibit_concentration(brokerage)
+        assert len(alerts) == 1
+        assert alerts[0]["severity"] == "HIGH"
+        assert "IBIT" in alerts[0]["condition"]
+        assert "12.0%" in alerts[0]["details"]
+        assert "7%" in alerts[0]["action"]
+        assert "NLR" in alerts[0]["action"]
+
+
+class TestIbitBelowMaxPct:
+    def test_ibit_at_7_pct_no_alert(self) -> None:
+        brokerage = {
+            "accounts": [
+                {
+                    "name": "PCRA - ROTH",
+                    "category": "Roth",
+                    "total_value": 100000,
+                    "holdings": [
+                        {
+                            "ticker": "IBIT",
+                            "shares": 50,
+                            "price": 140.0,
+                            "market_value": 7000.0,
+                            "actual_pct": 7.0,
+                        },
+                    ],
+                },
+            ],
+        }
+        alerts = evaluate_ibit_concentration(brokerage)
+        assert alerts == []
+
+
+class TestIbitNotInPortfolio:
+    def test_no_ibit_no_alert(self) -> None:
+        brokerage = {
+            "accounts": [
+                {
+                    "name": "PCRA - ROTH",
+                    "category": "Roth",
+                    "total_value": 100000,
+                    "holdings": [
+                        {
+                            "ticker": "SMH",
+                            "shares": 200,
+                            "price": 500.0,
+                            "market_value": 100000.0,
+                            "actual_pct": 100.0,
+                        },
+                    ],
+                },
+            ],
+        }
+        alerts = evaluate_ibit_concentration(brokerage)
+        assert alerts == []
+
+
+class TestIbitConcentrationNoneData:
+    def test_none_returns_empty(self) -> None:
+        assert evaluate_ibit_concentration(None) == []

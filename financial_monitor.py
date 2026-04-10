@@ -32,13 +32,17 @@ from fm_config import (
     DRIFT_REBALANCE,
     DRIFT_REDIRECT,
     FRED_API_KEY,
+    MAX_RECENT_TRANSACTIONS,
     OFX_BANKS_CONFIG,
+    OFX_STATEMENTS_DIR,
     OVERALL_TARGETS,
     SNAPTRADE_CONSUMER_KEY,
 )
 from fm_evaluators import (
     evaluate_account_red_flags,
     evaluate_hyperscaler_capex,
+    evaluate_ibit_concentration,
+    evaluate_inflation_trigger,
     evaluate_mid_year_triggers,
     evaluate_portfolio_drift,
     evaluate_recession_signals,
@@ -160,6 +164,16 @@ def main() -> None:
     # 3. Fetch brokerage data from SnapTrade
     brokerage_data = fetch_brokerage_data()
     output["brokerage_data"] = brokerage_data
+
+    # Compute aggregate portfolio value across all accounts
+    if brokerage_data:
+        total_portfolio_value = sum(
+            acct.get("total_value", 0) for acct in brokerage_data.get("accounts", [])
+        )
+        output["total_portfolio_value"] = round(total_portfolio_value, 2)
+    else:
+        output["total_portfolio_value"] = None
+
     if brokerage_data is None and SNAPTRADE_CONSUMER_KEY:
         output["alerts"].append(
             {
@@ -171,10 +185,10 @@ def main() -> None:
             }
         )
 
-    # 4. Fetch bank data from OFX
+    # 4. Fetch bank data from OFX / statement files
     bank_data = fetch_bank_data()
     output["bank_data"] = bank_data
-    if bank_data is None and OFX_BANKS_CONFIG:
+    if bank_data is None and (OFX_BANKS_CONFIG or OFX_STATEMENTS_DIR):
         output["alerts"].append(
             {
                 "severity": "WARNING",
@@ -215,12 +229,18 @@ def main() -> None:
         output["alerts"].extend(evaluate_account_red_flags(bank_data))
     if brokerage_data:
         output["alerts"].extend(evaluate_portfolio_drift(brokerage_data))
+        output["alerts"].extend(evaluate_ibit_concentration(brokerage_data))
     if market_data:
         output["alerts"].extend(evaluate_mid_year_triggers(market_data))
     output["alerts"].extend(evaluate_recession_signals(recession_data))
+    output["alerts"].extend(evaluate_inflation_trigger(recession_data))
     output["alerts"].extend(evaluate_hyperscaler_capex(capex_data))
 
-    # 9. Set overall status based on data availability and alerts
+    # Status priority (highest wins):
+    #   1. "critical"         — any CRITICAL alert
+    #   2. "partial_data"     — system warnings (data source failures)
+    #   3. "alerts_triggered" — HIGH alerts without system warnings
+    #   4. "all_clear"        — no alerts above MEDIUM
     system_warnings = [a for a in output["alerts"] if a["category"] == "system"]
     if system_warnings:
         output["status"] = "partial_data"
@@ -233,6 +253,18 @@ def main() -> None:
             output["status"] = "alerts_triggered"
     elif not system_warnings and "MEDIUM" not in severities:
         output["status"] = "all_clear"
+
+    # 10. Trim bank transactions for LLM token efficiency.
+    # Evaluation already ran on the full list above.
+    if output.get("bank_data") and output["bank_data"].get("transactions"):
+        full_count = len(output["bank_data"]["transactions"])
+        output["bank_data"]["transactions"] = output["bank_data"]["transactions"][
+            :MAX_RECENT_TRANSACTIONS
+        ]
+        output["bank_data"]["total_transaction_count"] = full_count
+
+    # 11. Remove static config from output (noise for LLM).
+    output.pop("portfolio_config", None)
 
     print(json.dumps(output, indent=2, default=str))
 

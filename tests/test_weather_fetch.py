@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +17,7 @@ from weather_fetch import (
 # --- Fixtures ---
 
 
-def _mock_api_response() -> dict:
+def _mock_api_response() -> dict[str, Any]:
     """Build a minimal Open-Meteo API response."""
     return {
         "hourly": {
@@ -142,7 +143,7 @@ class TestEnvVarDefaults:
 
 class TestSafeFloatInvalidInput:
     def test_non_numeric_exits(self) -> None:
-        from weather_fetch import _safe_float
+        from fm_config import _safe_float
 
         with pytest.raises(SystemExit):
             _safe_float("_TEST_BAD_VAR", "not_a_number")

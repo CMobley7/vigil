@@ -16,11 +16,11 @@ from typing import Any
 from fm_config import (
     ALL_TICKERS,
     BENCHMARK,
-    CHECKLIST_PATH,
     FRED_API_KEY,
     HYPERSCALER_TICKERS,
     LOOKBACK_DAYS,
     OFX_BANKS_CONFIG,
+    OFX_STATEMENTS_DIR,
     SNAPTRADE_CLIENT_ID,
     SNAPTRADE_CONSUMER_KEY,
     SNAPTRADE_USER_ID,
@@ -30,9 +30,7 @@ from fm_config import (
 
 logger = logging.getLogger(__name__)
 
-# Re-export CHECKLIST_PATH for backward compatibility
 __all__ = [
-    "CHECKLIST_PATH",
     "fetch_bank_data",
     "fetch_brokerage_data",
     "fetch_hyperscaler_capex",
@@ -74,7 +72,8 @@ def parse_checklist(path: str) -> dict[str, list[str]]:
     # Warn if file exists and is non-empty but no sections were parsed
     if content.strip() and not checklist["red_flags"] and not checklist["accounts"]:
         logger.warning(
-            "Checklist at %s found but no sections parsed — check heading format",
+            "Checklist at %s has content but no sections parsed — "
+            "expected headings: '## Red Flags', '## Accounts'",
             path,
         )
 
@@ -99,7 +98,7 @@ def fetch_brokerage_data() -> dict[str, Any] | None:  # pragma: no cover
         return None
 
     try:  # pragma: no cover
-        from snaptrade_client import SnapTrade  # type: ignore[import-untyped]
+        from snaptrade_client import SnapTrade
     except ImportError:
         logger.warning("snaptrade-python-sdk not installed")
         return None
@@ -138,13 +137,36 @@ def fetch_brokerage_data() -> dict[str, Any] | None:  # pragma: no cover
             for pos in positions:
                 ticker = getattr(pos.symbol, "ticker", None) if pos.symbol else None
                 market_value = float(pos.market_value) if pos.market_value else 0.0
+                shares = float(pos.units) if pos.units else 0.0
+                price = float(pos.price) if pos.price else 0.0
                 total_value += market_value
+
+                # Cost basis from SnapTrade (may be None if broker doesn't report)
+                avg_cost = (
+                    float(pos.average_purchase_price)
+                    if getattr(pos, "average_purchase_price", None)
+                    else None
+                )
+                cost_basis = round(avg_cost * shares, 2) if avg_cost else None
+                unrealized_gain = (
+                    round(market_value - cost_basis, 2) if cost_basis else None
+                )
+                unrealized_gain_pct = (
+                    round((unrealized_gain / cost_basis) * 100, 2)
+                    if cost_basis and cost_basis > 0 and unrealized_gain is not None
+                    else None
+                )
+
                 holdings.append(
                     {
                         "ticker": ticker,
-                        "shares": float(pos.units) if pos.units else 0.0,
-                        "price": float(pos.price) if pos.price else 0.0,
+                        "shares": shares,
+                        "price": price,
+                        "avg_cost": avg_cost,
                         "market_value": market_value,
+                        "cost_basis": cost_basis,
+                        "unrealized_gain": unrealized_gain,
+                        "unrealized_gain_pct": unrealized_gain_pct,
                     }
                 )
 
@@ -168,25 +190,33 @@ def fetch_brokerage_data() -> dict[str, Any] | None:  # pragma: no cover
 
         return {"accounts": accounts_data, "source": "snaptrade"}
 
-    except Exception as exc:
+    except Exception as exc:  # Boundary catch: 3rd-party SDK — log and degrade
         logger.warning("SnapTrade fetch failed: %s", exc)
         return None
 
 
 def fetch_bank_data() -> dict[str, Any] | None:  # pragma: no cover
-    """Fetch bank transactions via OFX Direct Connect.
+    """Fetch bank transactions via OFX Direct Connect and/or statement files.
 
-    Loops over all banks and accounts defined in ``OFX_BANKS_CONFIG``.
-    Returns aggregated transaction data or ``None`` if no banks configured
-    or all fetches fail.
+    Combines two sources:
+      1. **Live OFX Direct Connect** — uses ``OFX_BANKS_CONFIG`` to pull
+         transactions from banks that support the OFX protocol.
+      2. **Manual statement files** — reads ``.qfx`` and ``.ofx`` files from
+         ``OFX_STATEMENTS_DIR`` (e.g., downloaded from Chase).
+
+    Either or both sources can be configured. Returns ``None`` only if neither
+    is configured or all fetches/parses fail.
     """
-    if not OFX_BANKS_CONFIG:
-        logger.warning("OFX_BANKS_CONFIG not configured — skipping bank data")
+    if not OFX_BANKS_CONFIG and not OFX_STATEMENTS_DIR:
+        logger.warning(
+            "Neither OFX_BANKS_CONFIG nor OFX_STATEMENTS_DIR configured "
+            "— skipping bank data"
+        )
         return None
 
     try:  # pragma: no cover
-        from ofxtools.OFXClient import OFXClient  # type: ignore[import-not-found]
-        from ofxtools.Parser import OFXTree  # type: ignore[import-not-found]
+        from ofxtools.OFXClient import OFXClient
+        from ofxtools.Parser import OFXTree
     except ImportError:
         logger.warning("ofxtools not installed")
         return None
@@ -247,7 +277,7 @@ def fetch_bank_data() -> dict[str, Any] | None:  # pragma: no cover
                                 "memo": txn.memo or "",
                             }
                         )
-            except Exception as exc:
+            except Exception as exc:  # Boundary catch: OFX — log and degrade
                 errors.append(f"{bank_name}/{acct_id}: {exc}")
                 logger.warning(
                     "OFX fetch failed for %s/%s: %s",
@@ -256,11 +286,74 @@ def fetch_bank_data() -> dict[str, Any] | None:  # pragma: no cover
                     exc,
                 )
 
+    # --- Parse manually downloaded QFX/OFX statement files ---
+    if OFX_STATEMENTS_DIR:
+        stmt_dir = Path(OFX_STATEMENTS_DIR)
+        if stmt_dir.is_dir():
+            for stmt_file in sorted(stmt_dir.glob("*.[qo]fx")):
+                try:
+                    parser = OFXTree()
+                    with stmt_file.open("rb") as fh:
+                        parser.parse(fh)
+                    ofx = parser.convert()
+                    file_label = stmt_file.stem  # filename without extension
+
+                    for stmt in ofx.statements:
+                        if (
+                            hasattr(stmt, "available_balance")
+                            and stmt.available_balance
+                        ):
+                            bank_balances.append(
+                                {
+                                    "bank": file_label,
+                                    "account": getattr(stmt, "acctid", file_label),
+                                    "balance": float(stmt.available_balance),
+                                }
+                            )
+
+                        for txn in stmt.transactions:
+                            all_transactions.append(
+                                {
+                                    "bank": file_label,
+                                    "account": getattr(stmt, "acctid", file_label),
+                                    "date": (
+                                        str(txn.dtposted.date())
+                                        if txn.dtposted
+                                        else None
+                                    ),
+                                    "amount": (
+                                        float(txn.trnamt) if txn.trnamt else 0.0
+                                    ),
+                                    "name": txn.name or "Unknown",
+                                    "memo": txn.memo or "",
+                                }
+                            )
+
+                    # Move successfully parsed file to processed/ subfolder
+                    processed_dir = stmt_dir / "processed"
+                    processed_dir.mkdir(exist_ok=True)
+                    stmt_file.rename(processed_dir / stmt_file.name)
+                    logger.info("Processed OFX file %s -> processed/", stmt_file.name)
+                except Exception as exc:  # Boundary catch: file parse -- log, skip
+                    errors.append(f"file:{stmt_file.name}: {exc}")
+                    logger.warning(
+                        "Failed to parse OFX file %s: %s", stmt_file.name, exc
+                    )
+        else:
+            logger.warning(
+                "OFX_STATEMENTS_DIR '%s' is not a directory", OFX_STATEMENTS_DIR
+            )
+
     if errors:
         logger.warning("OFX errors: %s", "; ".join(errors))
 
     if not all_transactions and not bank_balances:
         return None
+
+    # Sort by date descending for consistent output.
+    # Trimming to MAX_RECENT_TRANSACTIONS happens in the orchestrator
+    # AFTER red-flag evaluation (evaluators need the full transaction list).
+    all_transactions.sort(key=lambda t: t.get("date") or "", reverse=True)
 
     return {
         "transactions": all_transactions,
@@ -278,7 +371,7 @@ def fetch_market_data() -> dict[str, dict[str, Any]] | None:  # pragma: no cover
         or ``None`` if yfinance is unavailable.
     """
     try:  # pragma: no cover
-        import yfinance as yf  # type: ignore[import-untyped]
+        import yfinance as yf
     except ImportError:
         logger.warning("yfinance not installed")
         return None
@@ -292,8 +385,8 @@ def fetch_market_data() -> dict[str, dict[str, Any]] | None:  # pragma: no cover
             info = t.fast_info
             hist_3m = t.history(period="3mo")
 
-            price = info.last_price if info.last_price else None
-            prev_close = info.previous_close if info.previous_close else None
+            price = info.last_price or None
+            prev_close = info.previous_close or None
             change_pct = None
             if price and prev_close:
                 change_pct = round(((price - prev_close) / prev_close) * 100, 2)
@@ -322,7 +415,7 @@ def fetch_market_data() -> dict[str, dict[str, Any]] | None:  # pragma: no cover
 
         return data
 
-    except Exception as exc:
+    except Exception as exc:  # Boundary catch: yfinance — log and degrade
         logger.warning("yfinance fetch failed: %s", exc)
         return None
 
@@ -342,12 +435,16 @@ def fetch_recession_indicators() -> dict[str, Any] | None:  # pragma: no cover
         return None
 
     try:  # pragma: no cover
-        from fredapi import Fred  # type: ignore[import-untyped]
+        from fredapi import Fred
     except ImportError:
         logger.warning("fredapi not installed")
         return None
 
-    from fm_config import SAHM_RULE_THRESHOLD, UNEMPLOYMENT_RECESSION_THRESHOLD
+    from fm_config import (
+        INFLATION_THRESHOLD,
+        SAHM_RULE_THRESHOLD,
+        UNEMPLOYMENT_RECESSION_THRESHOLD,
+    )
 
     try:  # pragma: no cover
         fred = Fred(api_key=FRED_API_KEY)
@@ -371,6 +468,17 @@ def fetch_recession_indicators() -> dict[str, Any] | None:  # pragma: no cover
         latest_sahm = float(sahm.dropna().iloc[-1]) if not sahm.empty else None
         sahm_date = str(sahm.dropna().index[-1].date()) if not sahm.empty else None
 
+        # CPI for All Urban Consumers (CPIAUCSL) — Year-over-Year % change
+        cpi = fred.get_series("CPIAUCSL")
+        cpi_yoy: float | None = None
+        cpi_date: str | None = None
+        if not cpi.empty and len(cpi.dropna()) >= 13:
+            cpi_clean = cpi.dropna()
+            latest_cpi = float(cpi_clean.iloc[-1])
+            year_ago_cpi = float(cpi_clean.iloc[-13])  # 12 months prior
+            cpi_yoy = round(((latest_cpi - year_ago_cpi) / year_ago_cpi) * 100, 2)
+            cpi_date = str(cpi_clean.index[-1].date())
+
         return {
             "unemployment_rate": {
                 "value": latest_unrate,
@@ -392,9 +500,17 @@ def fetch_recession_indicators() -> dict[str, Any] | None:  # pragma: no cover
                     else None
                 ),
             },
+            "inflation": {
+                "value": cpi_yoy,
+                "date": cpi_date,
+                "threshold": INFLATION_THRESHOLD,
+                "above_threshold": (
+                    cpi_yoy > INFLATION_THRESHOLD if cpi_yoy is not None else None
+                ),
+            },
         }
 
-    except Exception as exc:
+    except Exception as exc:  # Boundary catch: FRED API — log and degrade
         logger.warning("FRED API fetch failed: %s", exc)
         return None
 
@@ -410,7 +526,7 @@ def fetch_hyperscaler_capex() -> dict[str, Any] | None:  # pragma: no cover
         or ``None`` on failure.
     """
     try:  # pragma: no cover
-        import yfinance as yf  # type: ignore[import-untyped]
+        import yfinance as yf
     except ImportError:
         return None
 
@@ -466,8 +582,8 @@ def fetch_hyperscaler_capex() -> dict[str, Any] | None:  # pragma: no cover
                 "yoy_change_pct": yoy_change,
             }
 
-        return capex_data if capex_data else None
+        return capex_data or None
 
-    except Exception as exc:
+    except Exception as exc:  # Boundary catch: yfinance capex — log and degrade
         logger.warning("Hyperscaler capex fetch failed: %s", exc)
         return None

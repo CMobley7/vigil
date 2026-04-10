@@ -15,15 +15,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
+          version: "0.10.3"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -36,20 +38,25 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check .
 
+      - name: Check for stale noqa directives
+        run: uv run ruff check --extend-select RUF100 .
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
+          version: "0.10.3"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -57,7 +64,7 @@ jobs:
         run: uv sync --dev
 
       - name: Mypy
-        run: uv run mypy financial_monitor.py weather_fetch.py bible_reading.py fm_config.py fm_fetchers.py fm_evaluators.py
+        run: uv run mypy .
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
@@ -67,15 +74,17 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
+          version: "0.10.3"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -83,27 +92,35 @@ jobs:
         run: uv sync --dev
 
       - name: Pytest with coverage
-        run: uv run pytest --cov=. --cov-report=term-missing --cov-fail-under=85
+        run: uv run pytest --cov=. --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 
   security:
     name: Security Audit
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
         with:
+          version: "0.10.3"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: uv sync --dev
 
+      # TODO(cmobley, 2026-Q2): Remove ignores when snaptrade-python-sdk
+      # upgrades its cryptography dependency past 46.0.6.
       - name: pip-audit
-        run: uv run pip-audit
+        run: >-
+          uv run pip-audit
+          --ignore-vuln CVE-2024-12797
+          --ignore-vuln CVE-2026-26007
+          --ignore-vuln CVE-2026-34073

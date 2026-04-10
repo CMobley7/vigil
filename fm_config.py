@@ -7,13 +7,71 @@ Chairman's Portfolio Allocation document (March 2026).
 from __future__ import annotations
 
 import json
+import logging
 import os
-import re
+import sys
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # CONFIG — All via environment variables
 # ---------------------------------------------------------------------------
+
+
+def _safe_json(var: str, default: str) -> Any:  # noqa: ANN401 — parsed JSON is inherently untyped
+    """Parse JSON from an environment variable with a clear error on failure.
+
+    Args:
+        var: Environment variable name.
+        default: Default JSON string if the variable is not set.
+
+    Returns:
+        Parsed JSON value.
+    """
+    raw = os.environ.get(var, default)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON for %s: %r", var, raw)
+        sys.exit(1)
+
+
+def _safe_int(var: str, default: str) -> int:
+    """Parse an int from an environment variable with a clear error on failure.
+
+    Args:
+        var: Environment variable name.
+        default: Default value if the variable is not set.
+
+    Returns:
+        Parsed integer value.
+    """
+    raw = os.environ.get(var, default)
+    try:
+        return int(raw)
+    except ValueError:
+        logger.error("Invalid integer for %s: %r", var, raw)
+        sys.exit(1)
+
+
+def _safe_float(var: str, default: str) -> float:
+    """Parse a float from an environment variable with a clear error on failure.
+
+    Args:
+        var: Environment variable name.
+        default: Default value if the variable is not set.
+
+    Returns:
+        Parsed float value.
+    """
+    raw = os.environ.get(var, default)
+    try:
+        return float(raw)
+    except ValueError:
+        logger.error("Invalid float for %s: %r", var, raw)
+        sys.exit(1)
+
 
 # SnapTrade credentials
 SNAPTRADE_CONSUMER_KEY = os.environ.get("SNAPTRADE_CONSUMER_KEY", "")
@@ -22,12 +80,13 @@ SNAPTRADE_USER_ID = os.environ.get("SNAPTRADE_USER_ID", "")
 SNAPTRADE_USER_SECRET = os.environ.get("SNAPTRADE_USER_SECRET", "")
 
 # Account name mapping (SnapTrade account names → portfolio categories)
-ACCOUNT_MAP: dict[str, str] = json.loads(os.environ.get("ACCOUNT_MAP", "{}"))
+ACCOUNT_MAP: dict[str, str] = _safe_json("ACCOUNT_MAP", "{}")
 
 # OFX bank config — JSON array of banks, each with accounts
-OFX_BANKS_CONFIG: list[dict[str, Any]] = json.loads(
-    os.environ.get("OFX_BANKS_CONFIG", "[]")
-)
+OFX_BANKS_CONFIG: list[dict[str, Any]] = _safe_json("OFX_BANKS_CONFIG", "[]")
+
+# Directory for manually downloaded QFX/OFX statement files (e.g., Chase credit cards)
+OFX_STATEMENTS_DIR = os.environ.get("OFX_STATEMENTS_DIR", "")
 
 CHECKLIST_PATH = os.environ.get("CHECKLIST_PATH", "data/financial_checklist.md")
 
@@ -35,15 +94,16 @@ CHECKLIST_PATH = os.environ.get("CHECKLIST_PATH", "data/financial_checklist.md")
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
 # How many days of transactions to look back for red-flag checks
-LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "7"))
+LOOKBACK_DAYS = _safe_int("LOOKBACK_DAYS", "7")
+
+# Max transactions to include in output (most recent, sorted by date desc)
+MAX_RECENT_TRANSACTIONS = _safe_int("MAX_RECENT_TRANSACTIONS", "10")
 
 # Large transaction threshold (in dollars)
-LARGE_TRANSACTION_THRESHOLD = float(
-    os.environ.get("LARGE_TRANSACTION_THRESHOLD", "500")
-)
+LARGE_TRANSACTION_THRESHOLD = _safe_float("LARGE_TRANSACTION_THRESHOLD", "500")
 
 # Low balance threshold (in dollars)
-LOW_BALANCE_THRESHOLD = float(os.environ.get("LOW_BALANCE_THRESHOLD", "1000"))
+LOW_BALANCE_THRESHOLD = _safe_float("LOW_BALANCE_THRESHOLD", "1000")
 
 # Known vendors (pipe-separated) — transactions from these won't trigger alerts
 KNOWN_VENDORS: list[str] = (
@@ -51,6 +111,28 @@ KNOWN_VENDORS: list[str] = (
     if os.environ.get("KNOWN_VENDORS")
     else []
 )
+
+# ---------------------------------------------------------------------------
+# Notion API
+# ---------------------------------------------------------------------------
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+NOTION_DAILY_BRIEFS_DB = os.environ.get("NOTION_DAILY_BRIEFS_DB", "")
+
+# ---------------------------------------------------------------------------
+# Todoist (read-only, for daily brief task list display)
+# ---------------------------------------------------------------------------
+TODOIST_API_TOKEN = os.environ.get("TODOIST_API_TOKEN", "")
+
+# ---------------------------------------------------------------------------
+# Birthdays
+# ---------------------------------------------------------------------------
+CONTACTS_PATH = os.environ.get("CONTACTS_PATH", "data/contacts.json")
+
+# ---------------------------------------------------------------------------
+# Optional: LLM for birthday messages via OpenRouter
+# ---------------------------------------------------------------------------
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+BIRTHDAY_USE_LLM = os.environ.get("BIRTHDAY_USE_LLM", "false").lower() == "true"
 
 # ---------------------------------------------------------------------------
 # PORTFOLIO TARGETS — From Chairman's Final Portfolio Allocation (March 2026)
@@ -116,6 +198,7 @@ AVUV_SP500_LAG = -8.0  # percent underperformance over 3 months
 # Recession trigger thresholds (Section VIII.d)
 UNEMPLOYMENT_RECESSION_THRESHOLD = 5.0  # unemployment > 5%
 SAHM_RULE_THRESHOLD = 0.50  # Sahm rule >= 0.50 signals recession
+INFLATION_THRESHOLD = 3.0  # CPI YoY > 3% → trim VEA, add to COWZ
 
 # Hyperscaler capex guidance tracking (Section VIII.d)
 HYPERSCALER_TICKERS = ["MSFT", "AMZN", "META", "GOOGL"]
@@ -129,6 +212,3 @@ ALL_TICKERS = ["SMH", "VGT", "COWZ", "AVUV", "VEA", "NLR", "IBIT"]
 
 # Supplemental tickers for trigger checks
 TRIGGER_TICKERS = ["BTC-USD", "DX-Y.NYB", "SPY"]
-
-# Regex for bank transaction failure detection (evaluate_account_red_flags)
-FAIL_PATTERN = re.compile(r"\b(nsf|returned|failed|declined|bounced)\b")

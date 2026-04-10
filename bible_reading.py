@@ -164,7 +164,7 @@ def _extract_chapter_range(
     if start_verse is not None and end_verse is not None:
         text = _extract_verse_range(text, start_verse, end_verse)
 
-    return text if text else None
+    return text or None
 
 
 def _extract_verse_range(text: str, start_verse: int, end_verse: int) -> str:

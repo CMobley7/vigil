@@ -3,40 +3,43 @@ name = "openclaw-scripts"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "snaptrade-python-sdk",
-    "ofxtools",
-    "fredapi",
-    "yfinance",
-    "httpx",
+    "snaptrade-python-sdk>=11.0.0",
+    "ofxtools>=0.9.5",
+    "fredapi>=0.5.2",
+    "yfinance>=1.2.0",
+    "httpx>=0.28.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "ruff",
-    "mypy",
-    "pip-audit",
-
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.15.0",
+    "mypy>=1.14",
+    "pip-audit>=2.7",
 ]
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-exclude = ["tmp", ".venv"]
-lint.select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "DTZ", "T20", "SIM", "PT", "PIE", "N", "ANN", "RUF"]
+exclude = ["tmp", ".venv", ".agents"]
+lint.select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "C90", "DTZ", "T20", "SIM", "PT", "PIE", "N", "ANN", "D", "TCH", "RUF", "FURB"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "SIM300"]
-"financial_monitor.py" = ["T201"]
+"tests/*" = ["S", "SIM300", "D100", "D101", "D102", "D103", "D104", "TCH"]
+"financial_monitor.py" = ["T201", "C901"]
 "weather_fetch.py" = ["T201"]
-"bible_reading.py" = ["T201"]
+"bible_reading.py" = ["T201", "C901"]
+"fm_fetchers.py" = ["C901"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = true
+strict = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+exclude = ['tmp/', '\.venv/']
 
 [[tool.mypy.overrides]]
 module = [

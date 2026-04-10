@@ -21,28 +21,13 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
+from fm_config import _safe_float
+
 logger = logging.getLogger(__name__)
-
-
-def _safe_float(var: str, default: str) -> float:
-    """Parse a float from an environment variable with a clear error on failure.
-
-    Args:
-        var: Environment variable name.
-        default: Default value if the variable is not set.
-
-    Returns:
-        Parsed float value.
-    """
-    raw = os.environ.get(var, default)
-    try:
-        return float(raw)
-    except ValueError:
-        logger.error("Invalid value for %s: %r (expected a number)", var, raw)
-        sys.exit(1)
 
 
 # Configuration via env vars
@@ -112,7 +97,7 @@ def _celsius_to_fahrenheit(celsius: float) -> int:
     return round(celsius * 9 / 5 + 32)
 
 
-def fetch_weather() -> dict:
+def fetch_weather() -> dict[str, Any]:
     """Fetch weather data from Open-Meteo and return structured dict.
 
     Returns:

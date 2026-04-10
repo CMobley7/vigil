@@ -6,6 +6,7 @@ alert dicts with severity, category, condition, details, and action.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fm_config import (
@@ -15,7 +16,8 @@ from fm_config import (
     CAPEX_CUT_THRESHOLD,
     DRIFT_REBALANCE,
     DRIFT_REDIRECT,
-    FAIL_PATTERN,
+    IBIT_MAX_PCT_OF_401K,
+    INFLATION_THRESHOLD,
     KNOWN_VENDORS,
     LARGE_TRANSACTION_THRESHOLD,
     LOW_BALANCE_THRESHOLD,
@@ -24,6 +26,9 @@ from fm_config import (
     TARGETS_BY_CATEGORY,
     UNEMPLOYMENT_RECESSION_THRESHOLD,
 )
+
+# Regex for bank transaction failure detection
+FAIL_PATTERN = re.compile(r"\b(nsf|returned|failed|declined|bounced)\b")
 
 
 def evaluate_account_red_flags(bank_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -103,7 +108,7 @@ def evaluate_account_red_flags(bank_data: dict[str, Any]) -> list[dict[str, Any]
 
 
 def evaluate_portfolio_drift(
-    brokerage_data: dict[str, Any],
+    brokerage_data: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     """Check each ticker's actual weight vs. target using SnapTrade positions.
 
@@ -442,5 +447,105 @@ def evaluate_hyperscaler_capex(
                 "action": "Trim SMH from 25% to 18%, add to VEA and COWZ.",
             }
         )
+
+    return alerts
+
+
+def evaluate_inflation_trigger(
+    recession_data: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Evaluate inflation trigger from Section VIII.d.
+
+    Portfolio trigger:
+    "Fed pauses cuts, inflation back above 3%:
+     trim VEA from 11% to 5%, add to COWZ."
+
+    Args:
+        recession_data: Output of :func:`fetch_recession_indicators`.
+
+    Returns:
+        List of alert dicts.
+    """
+    alerts: list[dict[str, Any]] = []
+
+    if not recession_data:
+        return alerts
+
+    inflation = recession_data.get("inflation", {})
+    if inflation.get("above_threshold"):
+        alerts.append(
+            {
+                "severity": "HIGH",
+                "category": "trigger",
+                "condition": f"Inflation above {INFLATION_THRESHOLD}%",
+                "details": (
+                    f"CPI YoY at {inflation['value']:.2f}% "
+                    f"(as of {inflation['date']}). "
+                    f"Threshold: {INFLATION_THRESHOLD}%. "
+                    f"Fed likely to pause or reverse cuts."
+                ),
+                "action": "Trim VEA from 11% to 5%, add to COWZ.",
+            }
+        )
+
+    return alerts
+
+
+def evaluate_ibit_concentration(
+    brokerage_data: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Evaluate IBIT concentration in 401k accounts.
+
+    Portfolio trigger (Section VIII.d):
+    "IBIT appreciates past 10% of 401k portfolio:
+     mechanically trim back to 7%, add to NLR."
+
+    Uses SnapTrade positions to compute IBIT's actual weight in accounts
+    that hold it. If weight exceeds ``IBIT_MAX_PCT_OF_401K``, triggers
+    a mechanical trim alert.
+
+    Args:
+        brokerage_data: Output of :func:`fetch_brokerage_data`.
+
+    Returns:
+        List of alert dicts.
+    """
+    alerts: list[dict[str, Any]] = []
+
+    if not brokerage_data:
+        return alerts
+
+    for account in brokerage_data.get("accounts", []):
+        account_name = account.get("name", "Unknown")
+        total_value = account.get("total_value", 0)
+        if total_value <= 0:
+            continue
+
+        for holding in account.get("holdings", []):
+            ticker = holding.get("ticker")
+            if ticker != "IBIT":
+                continue
+
+            actual_pct = holding.get("actual_pct", 0.0)
+            if actual_pct > IBIT_MAX_PCT_OF_401K:
+                alerts.append(
+                    {
+                        "severity": "HIGH",
+                        "category": "trigger",
+                        "condition": (
+                            f"IBIT exceeds {IBIT_MAX_PCT_OF_401K}% "
+                            f"of portfolio in {account_name}"
+                        ),
+                        "details": (
+                            f"IBIT at {actual_pct:.1f}% of {account_name} "
+                            f"(${holding.get('market_value', 0):,.0f}). "
+                            f"Max allowed: {IBIT_MAX_PCT_OF_401K}%."
+                        ),
+                        "action": (
+                            f"Mechanically trim IBIT to 7% in {account_name}, "
+                            f"add proceeds to NLR."
+                        ),
+                    }
+                )
 
     return alerts
