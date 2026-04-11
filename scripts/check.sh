@@ -128,7 +128,7 @@ gate "Mypy" \
 # ---------------------------------------------------------------------------
 
 gate "Pytest + coverage" \
-    uv run pytest --cov=. --cov-report=term-missing --cov-fail-under=90
+    uv run pytest --cov=src/vigil --cov-report=term-missing --cov-fail-under=90
 
 # ---------------------------------------------------------------------------
 # ── JOB 4: Security ─────────────────────────────────────────────────────────

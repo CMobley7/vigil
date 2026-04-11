@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.so
+*.egg-info/
 
 # Virtual environments
 .venv/
@@ -31,3 +32,6 @@ tmp/
 
 # Agent skills (third-party)
 .agents/
+
+# Planning docs (LLM orchestration artifacts, not production)
+docs/planning/

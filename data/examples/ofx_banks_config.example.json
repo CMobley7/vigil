@@ -1,0 +1,14 @@
+[
+  {
+    "name": "BankA",
+    "url": "https://ofx.banka.com/ofx",
+    "org": "BankAOrg",
+    "fid": "12345",
+    "user": "your-banka-username",
+    "pass": "your-banka-password",
+    "accounts": [
+      {"id": "checking-acct-num", "type": "CHECKING"},
+      {"id": "savings-acct-num", "type": "SAVINGS"}
+    ]
+  }
+]

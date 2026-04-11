@@ -1,6 +1,7 @@
 [project]
-name = "openclaw-scripts"
+name = "vigil"
 version = "0.1.0"
+description = "Vigilant Integrated Guidance for Individual Living"
 requires-python = ">=3.12"
 dependencies = [
     "snaptrade-python-sdk>=11.0.0",
@@ -8,7 +9,18 @@ dependencies = [
     "fredapi>=0.5.2",
     "yfinance>=1.2.0",
     "httpx>=0.28.0",
+    "typer>=0.21.0",
 ]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+vigil = "vigil.cli:app"
 
 [dependency-groups]
 dev = [
@@ -27,11 +39,12 @@ lint.select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "C90", "DTZ", "T20
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "SIM300", "D100", "D101", "D102", "D103", "D104", "TCH"]
-"financial_monitor.py" = ["T201", "C901"]
-"weather_fetch.py" = ["T201"]
-"bible_reading.py" = ["T201", "C901"]
-"fm_fetchers.py" = ["C901"]
-"anytype_writer.py" = ["T201"]
+"src/vigil/financial/monitor.py" = ["T201", "C901"]
+"src/vigil/weather.py" = ["T201"]
+"src/vigil/bible.py" = ["T201", "C901"]
+"src/vigil/financial/fetchers.py" = ["C901"]
+"src/vigil/anytype/writer.py" = ["T201"]
+"src/vigil/cli.py" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

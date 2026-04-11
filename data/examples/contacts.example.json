@@ -1,0 +1,8 @@
+[
+  { "name": "John Doe", "birthday": "1990-03-15", "relationship": "friend" },
+  {
+    "name": "Jane Smith",
+    "birthday": "1985-07-22",
+    "relationship": "family"
+  }
+]
