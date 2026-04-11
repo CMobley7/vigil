@@ -1,7 +1,7 @@
-"""Build Notion blocks for Bible reading sub-pages.
+"""Build Markdown body for Bible reading sub-objects.
 
 Transforms the output of :func:`bible_reading.extract_today_reading` into
-Notion block dicts for two sub-pages:
+a Markdown string for two sub-objects:
 
 - 📖 Morning Bible Reading (Good Morning Mercies devotional)
 - 🌙 Evening Bible Reading (ESV passage + study notes in toggle blocks)
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from notion_client import heading_2, heading_3, paragraph, toggle
+from anytype_client import md_heading, md_paragraph, md_toggle
 
 # Map from bible_reading.py study note keys → display names.
 # Order determines rendering order (ESV Study → Reformation → MacArthur).
@@ -24,84 +24,80 @@ _STUDY_NOTE_ORDER: list[tuple[str, str]] = [
 ]
 
 
-def build_morning_devotional_blocks(reading: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build Notion blocks for the 📖 Morning Bible Reading sub-page.
+def build_morning_devotional_body(reading: dict[str, Any]) -> str:
+    """Build Markdown body for the 📖 Morning Bible Reading sub-object.
 
     Args:
         reading: Output of ``extract_today_reading()``.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the morning devotional body.
     """
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
     devotional = reading.get("morning_devotional")
 
     if not devotional or not isinstance(devotional, dict):
-        blocks.append(paragraph("No devotional content available for today."))
-        return blocks
+        return md_paragraph("No devotional content available for today.")
 
     day_key = devotional.get("day", "Today")
     text = devotional.get("text")
 
-    blocks.append(heading_2(f"Good Morning Mercies — {day_key}"))
+    sections.append(md_heading(f"Good Morning Mercies — {day_key}", level=2))
 
     if text:
-        # Split long text into ≤2000-char paragraphs (Notion limit).
-        for chunk in _chunk_text(text, max_len=2000):
-            blocks.append(paragraph(chunk))
+        for chunk in _chunk_text(text):
+            sections.append(md_paragraph(chunk))
     else:
         note = devotional.get("note", "Content not found.")
-        blocks.append(paragraph(f"⚠️ {note}"))
+        sections.append(md_paragraph(f"⚠️ {note}"))
 
-    return blocks
+    return "\n\n".join(sections)
 
 
-def build_evening_reading_blocks(reading: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build Notion blocks for the 🌙 Evening Bible Reading sub-page.
+def build_evening_reading_body(reading: dict[str, Any]) -> str:
+    """Build Markdown body for the 🌙 Evening Bible Reading sub-object.
 
     Args:
         reading: Output of ``extract_today_reading()``.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the evening reading body.
     """
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
     bible = reading.get("bible_reading")
 
     if not bible or not isinstance(bible, dict):
-        blocks.append(paragraph("No Bible reading scheduled for today."))
-        return blocks
+        return md_paragraph("No Bible reading scheduled for today.")
 
     reference = bible.get("reference", "Unknown")
     esv_text = bible.get("esv_text")
 
     # -- ESV passage --
-    blocks.append(heading_2(f"{reference} (ESV)"))
+    sections.append(md_heading(f"{reference} (ESV)", level=2))
 
     if esv_text:
-        for chunk in _chunk_text(esv_text, max_len=2000):
-            blocks.append(paragraph(chunk))
+        for chunk in _chunk_text(esv_text):
+            sections.append(md_paragraph(chunk))
     else:
-        blocks.append(paragraph("⚠️ Passage text not found in ESV Bible file."))
+        sections.append(md_paragraph("⚠️ Passage text not found in ESV Bible file."))
 
     # -- Study Notes --
     study_notes = bible.get("study_notes")
     if isinstance(study_notes, dict):
-        blocks.append(heading_2("Study Notes"))
+        sections.append(md_heading("Study Notes", level=2))
 
         for key, display_name in _STUDY_NOTE_ORDER:
             note_text = study_notes.get(key)
             if note_text:
-                children = [
-                    paragraph(chunk) for chunk in _chunk_text(note_text, max_len=2000)
-                ]
+                content = "\n\n".join(
+                    md_paragraph(chunk) for chunk in _chunk_text(note_text)
+                )
             else:
-                children = [paragraph("No notes available for this passage.")]
+                content = md_paragraph("No notes available for this passage.")
 
-            blocks.append(heading_3(display_name))
-            blocks.append(toggle(display_name, children))
+            sections.append(md_toggle(display_name, content))
 
-    return blocks
+    return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +127,6 @@ def _chunk_text(text: str, *, max_len: int = 2000) -> list[str]:
 
     paragraphs = text.split("\n\n")
     for para in paragraphs:
-        # +2 for the double newline separator
         addition = len(para) + (2 if current else 0)
         if current_len + addition > max_len and current:
             chunks.append("\n\n".join(current))
@@ -139,7 +134,6 @@ def _chunk_text(text: str, *, max_len: int = 2000) -> list[str]:
             current_len = 0
 
         if len(para) > max_len:
-            # Hard truncate oversized paragraphs
             if current:
                 chunks.append("\n\n".join(current))
                 current = []

@@ -139,32 +139,61 @@ The `bible_reading.py` script was written against an assumed markdown format. Af
 3. Upload to VPS: `scp morning_messages.txt root@<vps-ip>:/home/openclaw/data/`
 4. This file serves as the few-shot training prompt for Opus 4.6
 
+### 3b. Compile Style Prompts
+
+1. Compile 10-15 past messages **to Chanry** into `chanry_style.md`:
+   - Include variety: morning messages, sweet messages, funny messages, supportive messages
+   - These serve as few-shot examples for GPT-5.4’s special Chanry prompt
+2. Compile 10-15 past messages **to friends** into `reply_style.md`:
+   - Include variety: casual texts, substantive replies, group chat messages
+   - These serve as few-shot examples for the general reply prompt
+3. Upload both to VPS:
+   ```bash
+   scp chanry_style.md reply_style.md root@<vps-ip>:/home/openclaw/data/
+   ```
+
 ---
 
-## Step 4 — Notion Account + Integration
+## Step 4 — Anytype Local-First Setup
 
 **Time:** ~15 min
 
-1. Go to [notion.so](https://www.notion.so) → Sign up (free plan is sufficient)
-2. Create a workspace
-3. Create a **full-page database** called **"Daily Briefs"**:
-   - Click **+ New page** in the sidebar → select **Table** (not "Empty page")
-   - Name it **"Daily Briefs"**
-   - This creates a database (a structured container that `notion_writer.py` can add entries to)
-4. **Get the Database ID** — you'll need this for the `NOTION_DAILY_BRIEFS_DB` env var:
-   - Open the Daily Briefs database in your browser
-   - The URL looks like: `https://www.notion.so/your-workspace/Daily-Briefs-abc123def456...`
-   - The **32-character hex string** after the page name (e.g., `abc123def456...`) is your database ID
-   - Copy it — you'll paste it into the `.env` file in Step 13c
-5. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) → **New Integration**
-   - Name: `OpenClaw Daily Brief`
-   - Associated workspace: your workspace
-   - Capabilities: **Read, Update, Insert content**
-6. Copy the **Internal Integration Token** (starts with `ntn_`) — this is your `NOTION_TOKEN`
-7. Go back to your "Daily Briefs" database → click `...` → **Connections** → **Add Connection** → select your integration (this grants the integration permission to read and write to this database)
-8. Store both values securely — you'll use them in Step 13c:
-   - **Integration token** (`ntn_...`) → `NOTION_TOKEN`
-   - **Database ID** (32-char hex) → `NOTION_DAILY_BRIEFS_DB`
+OpenClaw uses **Anytype** instead of Notion for all daily brief storage. Anytype is end-to-end encrypted and stores data locally on your VPS — no cloud account required.
+
+1. Install the Anytype CLI on the VPS:
+   ```bash
+   # Download the latest release from https://github.com/anyproto/anytype-heart/releases
+   wget https://github.com/anyproto/anytype-heart/releases/latest/download/anytype-heart-linux-amd64.tar.gz
+   tar xf anytype-heart-linux-amd64.tar.gz
+   sudo mv anytype-heart /usr/local/bin/anytype
+   ```
+
+2. Start the Anytype headless server (the REST API runs on `http://127.0.0.1:31012`):
+   ```bash
+   # Add to systemd unit or start manually
+   anytype serve &
+   ```
+
+3. Create an API key:
+   ```bash
+   anytype auth apikey create --name "openclaw-daily-briefs"
+   # Output: your API key (e.g., eyJhbGc...)
+   ```
+
+4. Get your Space ID (Anytype calls workspaces "spaces"):
+   ```bash
+   curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+        -H "Anytype-Version: 2025-11-08" \
+        http://127.0.0.1:31012/v1/spaces
+   # Copy the id of the space where you want daily briefs (e.g., "space_abc123")
+   ```
+
+5. Store both values securely — you'll use them in Step 13c:
+   - **API key** → `ANYTYPE_API_KEY`
+   - **Space ID** → `ANYTYPE_SPACE_ID`
+
+> [!IMPORTANT]
+> Port 31012 must remain bound to `127.0.0.1` only. Never expose it publicly. The firewall rules in Step 7 already block external access.
 
 ---
 
@@ -325,20 +354,31 @@ Coolify is a self-hosted alternative to Heroku or Vercel — it gives you a web 
    ```
 3. Run the setup script: `./docker-setup.sh`
 4. During onboarding, when prompted:
-   - **AI Provider:** select **OpenRouter**
-   - **API Key:** paste your OpenRouter API key
-   - **Default Model:** enter `anthropic/claude-sonnet-4-6`
-5. Configure the Neon database connection in OpenClaw's config (`~/.openclaw/config.json`):
+   - **AI Provider:** select **ChatGPT Plus OAuth** (`--auth-choice openai-codex`)
+   - This bridges the $20/mo ChatGPT Plus subscription for GPT-5.4 access
+   - No per-token billing for primary LLM usage
+5. Configure the Neon database connection in OpenClaw’s config (`~/.openclaw/config.json`):
    - Set the `DATABASE_URL` to your Neon connection string
 6. Start: `docker compose up -d`
-7. Check logs for `🦞 OPENCLAW READY` and note the Dashboard URL + auth token
+7. Check logs for `🦡 OPENCLAW READY` and note the Dashboard URL + auth token
 8. Access the Control UI and save the auth token securely
 
-### OpenRouter Setup:
+### OpenRouter Setup (Fallback Models):
 
 9. Go to [openrouter.ai](https://openrouter.ai) → Sign up → **Settings** → **API Keys** → create key
-10. Add credits ($20 to start)
-11. The key was already configured during step 4 above
+10. Add credits ($20 to start — fallback usage only)
+11. Configure OpenRouter as the fallback provider in `~/.openclaw/config.json`:
+    - Set `OPENROUTER_API_KEY` to your OpenRouter key
+12. The key is used only when ChatGPT Plus OAuth fails or for specific fallback tasks
+
+### LLM Model Strategy:
+
+| Task | Primary (ChatGPT Plus OAuth) | Fallback (OpenRouter, reasoning on) |
+|------|-----|---------|
+| General summarization | GPT-5.4 | Gemini 3.1 Pro |
+| Chanry’s messages | GPT-5.4 (special prompt + `chanry_style.md`) | Claude Opus 4.6 |
+| General replies | GPT-5.4 (special prompt + `reply_style.md`) | Claude Sonnet 4.6 |
+| Image generation | — | — (9 text prompts only, no API image generation) |
 
 ### Security:
 
@@ -436,7 +476,7 @@ Since you're on Android, use the **SMS Gateway for Android** app to turn your ph
 
 ### 11f. Telegram (Primary Chat Interface)
 
-Telegram is your primary way to interact with OpenClaw — mark Todoist tasks complete, request Notion updates, query weather, check your portfolio, etc. OpenClaw has a **native Telegram channel plugin** as part of its hub-and-spoke Gateway architecture.
+Telegram is your primary way to interact with OpenClaw — mark Todoist tasks complete, request Anytype updates, query weather, check your portfolio, etc. OpenClaw has a **native Telegram channel plugin** as part of its hub-and-spoke Gateway architecture.
 
 1. Open Telegram → search for [@BotFather](https://t.me/BotFather) (verified account with blue checkmark)
 2. Send `/newbot` → follow the prompts:
@@ -648,21 +688,21 @@ The financial monitor is **pre-built** as 4 modules: [financial_monitor.py](file
 
 6. Test the script manually: `python3 /home/openclaw/data/scripts/financial_monitor.py`
 
-### 13c. Deploy Notion Modules
+### 13c. Deploy Anytype Modules
 
-The daily brief page builder is **pre-built** as 7 modules that create each Notion sub-page without using the LLM. These run as Phase 1 of the morning sweep (see Step 15b).
+The daily brief object builder is **pre-built** as 7 modules that create each Anytype sub-object without using the LLM. These run as Phase 1 of the morning sweep (see Step 15b).
 
-1. Transfer all Notion modules and their helper to the VPS:
+1. Transfer all Anytype modules and their helpers to the VPS:
 
    ```bash
    scp -i ~/.ssh/hetzner_openclaw \
-     notion_client.py \
-     notion_bible.py \
-     notion_weather.py \
-     notion_todoist.py \
-     notion_finance.py \
-     notion_birthdays.py \
-     notion_writer.py \
+     anytype_client.py \
+     anytype_bible.py \
+     anytype_weather.py \
+     anytype_todoist.py \
+     anytype_finance.py \
+     anytype_birthdays.py \
+     anytype_writer.py \
      bible_reading.py \
      root@<vps-wireguard-ip>:/home/openclaw/data/scripts/
    ```
@@ -670,20 +710,20 @@ The daily brief page builder is **pre-built** as 7 modules that create each Noti
 2. Set the additional environment variables (add to the same `.env` file from Step 13b):
 
    ```bash
-   export NOTION_TOKEN="ntn_your-notion-integration-token"        # from Step 4
-   export NOTION_DAILY_BRIEFS_DB="your-32-char-database-id"       # from Step 4
+   export ANYTYPE_API_KEY="your-anytype-api-key"                   # from Step 4
+   export ANYTYPE_SPACE_ID="your-space-id"                         # from Step 4
    export TODOIST_API_TOKEN="your-todoist-api-token"               # from Step 2b
    export CONTACTS_PATH="/home/openclaw/data/contacts.json"        # from Step 2a
    export BIRTHDAY_USE_LLM="false"                                 # set to "true" to use Sonnet for birthday messages
    ```
 
-3. Test the Notion writer:
+3. Test the Anytype writer:
 
    ```bash
-   cd /home/openclaw/data/scripts && uv run python3 notion_writer.py
+   cd /home/openclaw/data/scripts && uv run python3 anytype_writer.py
    ```
 
-   You should see JSON output with `parent_page_id` and `sub_pages`. Check your Notion workspace — a new daily brief page should appear with Bible, weather, to-do, and finance sub-pages.
+   You should see JSON output with `parent_object_id` and `sub_objects`. Open Anytype on any device synced to your VPS — a new daily brief object should appear with Bible, weather, to-do, and finance sub-objects.
 
 ---
 
@@ -721,20 +761,20 @@ If nothing needs attention, reply HEARTBEAT_OK.
 1. Check all messaging platforms (Gmail, SMS, WhatsApp, Signal, GroupMe) for unread messages
 2. If any messages require a response, summarize each and draft a reply
 3. Use Claude Opus 4.6 with extended thinking (via OpenRouter) for all drafted replies
-4. Append any updates to today's Notion daily brief — Texts and Emails sub-pages
+4. Append any updates to today's Anytype daily brief — Texts and Emails sub-objects
 5. If no updates, reply HEARTBEAT_OK
 HEARTBEAT_EOF
 ```
 
-### 15b. Phase 1 — Deterministic Pages (6:30 AM)
+### 15b. Phase 1 — Deterministic Objects (6:30 AM)
 
-`notion_writer.py` creates the daily brief parent page and all deterministic sub-pages (Bible, weather, to-do, finance, birthdays) without using the LLM. It writes a state file at `/tmp/daily_brief_state.json` that Phase 2 reads.
+`anytype_writer.py` creates the daily brief parent object and all deterministic sub-objects (Bible, weather, to-do, finance, birthdays) without using the LLM. It writes a state file at `/tmp/daily_brief_state.json` that Phase 2 reads.
 
 ```bash
-# Phase 1: deterministic pages (~1-2 min, no LLM cost)
+# Phase 1: deterministic objects (~1-2 min, no LLM cost)
 crontab -e
 # Add this line:
-30 6 * * * cd /home/openclaw/data/scripts && /home/openclaw/.local/bin/uv run python3 notion_writer.py >> /var/log/openclaw/phase1.log 2>&1
+30 6 * * * cd /home/openclaw/data/scripts && /home/openclaw/.local/bin/uv run python3 anytype_writer.py >> /var/log/openclaw/phase1.log 2>&1
 ```
 
 ### 15c. Phase 2 — LLM Morning Sweep (6:40 AM)
@@ -756,12 +796,12 @@ ROLE:
 You are a meticulous executive assistant and daily operations coordinator.
 You have complete read access to all messaging platforms (Gmail, SMS,
 WhatsApp, Signal, GroupMe) via built-in tools, and read-write access to
-Notion and Todoist via MCP. You are trusted to aggregate sensitive
+Anytype and Todoist via MCP. You are trusted to aggregate sensitive
 information and present it in a clear, actionable daily brief.
 
-Today's deterministic sub-pages (Bible, weather, to-do, finance tables,
-birthdays) have already been created by notion_writer.py. Your job is to
-fill in the sub-pages that require intelligence: messages, replies,
+Today's deterministic sub-objects (Bible, weather, to-do, finance tables,
+birthdays) have already been created by anytype_writer.py. Your job is to
+fill in the sub-objects that require intelligence: messages, replies,
 financial editorial, and Chanry's message.
 
 INSTRUCTIONS:
@@ -769,22 +809,23 @@ Process only the LLM-dependent portions of the daily brief. Use Claude
 Sonnet 4.6 (via OpenRouter) for general summarization. Switch to Claude
 Opus 4.6 with extended thinking (via OpenRouter) for drafting ALL replies
 and Chanry's message. Use Google's Nano Banana (latest, via OpenRouter)
-for image generation. All output goes to Notion under the parent page
+for image generation. All output goes to Anytype under the parent object
 created by Phase 1.
 
 STEPS:
 
 1. STATE FILE HANDOFF — Read /tmp/daily_brief_state.json.
-   → If found: extract parent_page_id and sub_pages dict. Proceed to Step 2.
-   → If missing: re-run `python3 /home/openclaw/data/scripts/notion_writer.py`.
+   → If found: extract space_id, parent_object_id, and sub_objects dict.
+     Proceed to Step 2.
+   → If missing: re-run `python3 /home/openclaw/data/scripts/anytype_writer.py`.
      → If that succeeds: read the state file again, proceed to Step 2.
      → If that also fails: send a Telegram alert to the user:
        "⚠️ Morning brief Phase 1 failed: {error}. Creating partial brief."
-       Create a NEW parent page in the Daily Briefs database, proceed to
-       Step 2. The brief will be missing deterministic sub-pages.
+       Create a NEW parent object in the Daily Briefs space, proceed to
+       Step 2. The brief will be missing deterministic sub-objects.
 
-2. CARRYOVER — Query yesterday's Notion daily brief page. In the 💬 Texts
-   and 📧 Emails sub-pages, identify items that are still awaiting a
+2. CARRYOVER — Query yesterday's Anytype daily brief object. In the 💬 Texts
+   and 📧 Emails sub-objects, identify items that are still awaiting a
    response (not marked with strikethrough). For each carryover item:
    a. Check if the sender sent a NEW follow-up message since yesterday.
    b. If yes → flag as "needs fresh draft" (original context changed).
@@ -808,10 +849,10 @@ STEPS:
    /tmp/daily_brief_fm_output.json (written by Phase 1 alongside the state
    file — avoids re-running financial_monitor.py, which is expensive due to
    API calls to SnapTrade, FRED, and yfinance). Parse the JSON and write two
-   sections, then APPEND them to the empty 📈 Stocks & Finances page
-   (use sub_pages.finance page ID from the state file):
+   sections, then UPDATE the empty 📈 Stocks & Finances object
+   (use sub_objects.finance object ID from the state file):
 
-   **🔴 Action Items** (top of page):
+   **🔴 Action Items** (top of object):
    - List any HIGH or CRITICAL alerts with their recommended action text.
    - If no HIGH/CRITICAL alerts, write: "✅ All clear — no action needed."
 
@@ -821,7 +862,7 @@ STEPS:
    - Add a 1-sentence editorial take (e.g., "Economy stable" or "Yield
      curve inverted — historically precedes recessions within 12 months").
 
-   The page is empty at this point — Phase 1 created it but left it
+   The object is empty at this point — Phase 1 created it but left it
    unpopulated. Step 9 will append the data tables below your editorial.
 
    If /tmp/daily_brief_fm_output.json is missing (Phase 1 finance step
@@ -837,8 +878,8 @@ STEPS:
 7. IMAGE GENERATION — Pass the three prompts from Step 6 to Google's Nano
    Banana (latest model, via OpenRouter). Retrieve all three images.
 
-8. NOTION DELIVERY — Under the parent page from Step 1, create these
-   sub-pages (the deterministic sub-pages already exist):
+8. ANYTYPE DELIVERY — Under the parent object from Step 1, create these
+   sub-objects (the deterministic sub-objects already exist):
    - 💬 Texts — overall summary at top, then individual summaries +
      drafted replies. Carryover items clearly marked as "⏳ CARRYOVER"
      with their existing or newly drafted reply.
@@ -846,21 +887,21 @@ STEPS:
    - 💌 Chanry's Message — drafted message text + embed all 3 images.
 
 9. FINANCE TABLES — Run:
-     python3 /home/openclaw/data/scripts/notion_finance.py
-   This appends the portfolio, account balances, and transaction tables
-   BELOW the editorial content you added in Step 5. The data is read
-   from /tmp/daily_brief_fm_output.json (cached by Phase 1). If this
-   step fails, log the error and continue — the editorial is already
-   delivered, and the user can view raw data in financial_monitor.py.
+     python3 /home/openclaw/data/scripts/anytype_finance.py
+   This updates the finance object body with portfolio, account balances,
+   and transaction tables BELOW the editorial content you added in Step 5.
+   The data is read from /tmp/daily_brief_fm_output.json (cached by
+   Phase 1). If this step fails, log the error and continue — the
+   editorial is already delivered.
 
 END GOAL:
-A complete Notion daily brief delivered by 7:00 AM with all sub-pages
-populated. Deterministic sub-pages (Bible, weather, to-do, finance tables,
-birthdays) are filled by Phase 1. LLM sub-pages (texts, emails, Chanry's
+A complete Anytype daily brief delivered by 7:00 AM with all sub-objects
+populated. Deterministic sub-objects (Bible, weather, to-do, finance tables,
+birthdays) are filled by Phase 1. LLM sub-objects (texts, emails, Chanry's
 message) are filled by Phase 2. Every message and email needing a reply
-has a draft using Opus 4.6. The 📈 finance page has action items and
+has a draft using Opus 4.6. The 📈 finance object has action items and
 economy editorial at the top, with data tables appended below by
-`notion_finance.py`. Chanry's message includes 3 generated images.
+`anytype_finance.py`. Chanry's message includes 3 generated images.
 
 NARROWING:
 - Do NOT send any replies automatically — only draft them for review,
@@ -870,22 +911,22 @@ NARROWING:
   and may produce a worse reply without the original context.
 - Do NOT use Sonnet for drafted replies — always use Opus 4.6 with
   extended thinking, because reply quality is the highest-value output.
-- Do NOT create empty sub-pages — skip them and note on parent page
+- Do NOT create empty sub-objects — skip them and note on parent object
   instead (e.g., "💬 Texts — no new messages").
-- Do NOT recreate sub-pages that Phase 1 already built (Bible, weather,
-  to-do, birthdays) — if the state file exists, those pages are already
-  populated. The 📈 finance page is created empty by Phase 1; write
-  editorial to it in Step 5, then run `notion_finance.py` in Step 9.
+- Do NOT recreate sub-objects that Phase 1 already built (Bible, weather,
+  to-do, birthdays) — if the state file exists, those objects are already
+  populated. The 📈 finance object is created empty by Phase 1; write
+  editorial to it in Step 5, then run `anytype_finance.py` in Step 9.
 - Do NOT append finance tables before writing editorial — Step 9 must
   run AFTER Step 5, or the tables will appear above the editorial.
-- Do NOT include raw JSON in Notion — always format as human-readable
-  text, tables, or callouts.
-- Do NOT attempt to fix notion_writer.py if it fails — send a Telegram
+- Do NOT include raw JSON in Anytype — always format as human-readable
+  text, Markdown tables, or callouts.
+- Do NOT attempt to fix anytype_writer.py if it fails — send a Telegram
   alert and proceed with the partial brief. Debugging scripts during the
   morning sweep risks delaying the entire brief past the 7:00 AM deadline.
 - Avoid summarizing messages shorter than 2 sentences — include verbatim.
 - Stay within the 7:00 AM deadline — if a non-critical step fails, skip
-  it, note the failure on the parent page, and continue.
+  it, note the failure on the parent object, and continue.
 ```
 
 ### 15d. Periodic Sweep Cron Job (Every 3 Hours)
@@ -909,12 +950,12 @@ updates to the existing daily brief.
 INSTRUCTIONS:
 Run a lighter version of the morning sweep. Focus only on new messages, emails, and
 reply tracking. Use Sonnet 4.6 for summarization. Switch to Opus 4.6 with extended
-thinking for all drafted replies. Append results to today's existing Notion sub-pages.
+thinking for all drafted replies. Append results to today's existing Anytype sub-objects.
 
 STEPS:
 
-1. IDENTIFY TODAY'S BRIEF — Find today's parent page in the "Daily Briefs" Notion
-   database.
+1. IDENTIFY TODAY'S BRIEF — Find today's parent object in the "Daily Briefs" Anytype
+   space.
 
 2. NEW MESSAGES — Pull unread messages from all platforms (Gmail, SMS, WhatsApp,
    Signal, GroupMe) that arrived since the last sweep. Summarize each new message.
@@ -924,18 +965,18 @@ STEPS:
 
 4. REPLY TRACKING — Check all messaging and email platforms for replies that were
    actually sent (via read access). For each sent reply:
-   - Find the corresponding drafted reply in the Notion sub-page
+   - Find the corresponding drafted reply in the Anytype sub-object
    - Update it to show the actual reply that was sent
    - Mark the drafted reply with ~~strikethrough~~
    - Keep both versions for a complete record
 
-5. APPEND TO NOTION — Add new message summaries and drafted replies to the bottom
-   of the existing 💬 Texts and 📧 Emails sub-pages. Mark new entries with the
+5. APPEND TO ANYTYPE — Add new message summaries and drafted replies to the bottom
+   of the existing 💬 Texts and 📧 Emails sub-objects. Mark new entries with the
    current timestamp.
 
 END GOAL:
-Today's Notion daily brief is updated with all new messages, fresh drafted replies,
-and reply tracking status. The Texts and Emails sub-pages show a complete, timestamped
+Today's Anytype daily brief is updated with all new messages, fresh drafted replies,
+and reply tracking status. The Texts and Emails sub-objects show a complete, timestamped
 record of the day's communications.
 
 NARROWING:
@@ -945,7 +986,7 @@ NARROWING:
 - Do NOT send any replies — only draft them
 - Do NOT use Sonnet for drafted replies — always use Opus 4.6 with extended thinking
 - Avoid duplicating messages already in the sub-page
-- If no new messages exist, do not modify the Notion page at all
+- If no new messages exist, do not modify the Anytype object at all
 ```
 
 ---
@@ -954,25 +995,26 @@ NARROWING:
 
 **Time:** ~1-2 hours
 
-### 16a. Test Phase 1 (Deterministic Pages)
+### 16a. Test Phase 1 (Deterministic Objects)
 
-Run `notion_writer.py` manually and verify the output:
+Run `anytype_writer.py` manually and verify the output:
 
 ```bash
-cd /home/openclaw/data/scripts && uv run python3 notion_writer.py
+cd /home/openclaw/data/scripts && uv run python3 anytype_writer.py
 ```
 
 1. Verify the state file was created:
    ```bash
    cat /tmp/daily_brief_state.json
    ```
-   - [ ] `parent_page_id` is a valid Notion page ID
-   - [ ] `sub_pages.morning_bible` is not null
-   - [ ] `sub_pages.evening_bible` is not null
-   - [ ] `sub_pages.weather` is not null
-   - [ ] `sub_pages.todoist` is not null
-   - [ ] `sub_pages.finance` is not null (page exists but is **empty** — this is intentional)
-   - [ ] `sub_pages.birthdays` is null (expected if no birthdays today) or a valid ID
+   - [ ] `space_id` matches your Anytype space
+   - [ ] `parent_object_id` is a valid Anytype object ID
+   - [ ] `sub_objects.morning_bible` is not null
+   - [ ] `sub_objects.evening_bible` is not null
+   - [ ] `sub_objects.weather` is not null
+   - [ ] `sub_objects.todoist` is not null
+   - [ ] `sub_objects.finance` is not null (object exists but is **empty** — this is intentional)
+   - [ ] `sub_objects.birthdays` is null (expected if no birthdays today) or a valid ID
 
 2. Verify the FM cache was created:
    ```bash
@@ -980,13 +1022,13 @@ cd /home/openclaw/data/scripts && uv run python3 notion_writer.py
    ```
    - [ ] Contains `brokerage_data` and `bank_data` keys
 
-3. Open Notion and verify:
-   - [ ] Parent page exists with today's date as title
+3. Open Anytype (on any synced device) and verify:
+   - [ ] Parent object exists with today's date as title
    - [ ] 📖 Morning Bible Reading has devotional text
    - [ ] 🌙 Evening Bible Reading has ESV text + 3 study note toggles
-   - [ ] 🌤️ Weather has hourly + 10-day tables
+   - [ ] 🌤️ Weather has hourly + 10-day Markdown tables
    - [ ] ✅ To-Do List has Todoist tasks
-   - [ ] 📈 Stocks & Finances page exists but is **empty** (no blocks yet)
+   - [ ] 📈 Stocks & Finances object exists but is **empty** (no content yet)
    - [ ] 🎂 Birthdays skipped if no birthdays today
 
 ### 16b. Test Phase 2 (LLM Sweep)
@@ -997,13 +1039,13 @@ Manually trigger the morning sweep via the OpenClaw CLI:
 openclaw run --prompt-file ~/openclaw/workspace/prompts/morning_sweep.md
 ```
 
-1. Verify LLM-created sub-pages:
-   - [ ] 💬 Texts sub-page shows message summaries with drafted replies
-   - [ ] 📧 Emails sub-page shows email summaries with drafted replies
+1. Verify LLM-created sub-objects:
+   - [ ] 💬 Texts sub-object shows message summaries with drafted replies
+   - [ ] 📧 Emails sub-object shows email summaries with drafted replies
    - [ ] 💌 Chanry's Message has a drafted message + 3 Nano Banana images
    - [ ] 📈 Stocks & Finances now has 🔴 Action Items + 🌍 Economy Snapshot editorial at the **top**, followed by portfolio, balances, and transaction tables **below**
 
-2. Verify Phase 2 did NOT duplicate Phase 1 pages:
+2. Verify Phase 2 did NOT duplicate Phase 1 objects:
    - [ ] Only one 📖 Morning Bible Reading exists (not two)
    - [ ] Only one 🌤️ Weather exists (not two)
 
@@ -1014,8 +1056,8 @@ openclaw run --prompt-file ~/openclaw/workspace/prompts/morning_sweep.md
 
 ### 16d. Test Failure Modes
 
-5. **Phase 1 failure:** Temporarily break the `NOTION_TOKEN` → run `notion_writer.py` → verify it exits with an error. Then trigger Phase 2 → verify the LLM sends a Telegram alert and creates a partial brief.
-6. **Financial monitor failure:** Temporarily break OFX config → run `notion_writer.py` → verify the finance sub-page is still created (empty) and the state file still has all other sub-pages.
+5. **Phase 1 failure:** Temporarily break the `ANYTYPE_API_KEY` → run `anytype_writer.py` → verify it exits with an error. Then trigger Phase 2 → verify the LLM sends a Telegram alert and creates a partial brief.
+6. **Financial monitor failure:** Temporarily break OFX config → run `anytype_writer.py` → verify the finance sub-object is still created (empty) and the state file still has all other sub-objects.
 7. **Weather script:** Run `weather_fetch.py` manually → verify JSON output includes today's hourly + 10-day forecast.
 
 ---
@@ -1029,7 +1071,7 @@ Follow the steps in order — Steps 1-4 are free local prep, Steps 5-16 require 
 | 1    | Calibre pipeline (Mac)           | 2-3 hrs         | None                     |
 | 2    | Contacts & Schedules             | 30 min          | None                     |
 | 3    | Compile morning messages         | 1-2 hrs         | None                     |
-| 4    | Notion/app setup                 | 15 min          | None                     |
+| 4    | Anytype local-first setup        | 15 min          | None                     |
 | 5    | Hetzner account + server         | 15 min          | None                     |
 | 6    | LUKS encryption                  | 30 min          | Step 5                   |
 | 7    | WireGuard VPN                    | 20 min          | Steps 5-6                |
@@ -1039,7 +1081,7 @@ Follow the steps in order — Steps 1-4 are free local prep, Steps 5-16 require 
 | 11   | Messaging bridges                | 45 min          | Step 10                  |
 | 12   | OFX Direct Connect banks         | 20 min          | Step 5                   |
 | 13a-b| Financial monitor                | 30 min          | Steps 10, 12             |
-| 13c  | Notion modules                   | 15 min          | Steps 4, 13a-b           |
+| 13c  | Anytype modules                  | 15 min          | Steps 4, 13a-b           |
 | 14   | Weather script                   | 20 min          | Step 10                  |
 | 15   | Cron jobs (Phase 1 + 2) + RISEN  | 30 min          | Steps 10-14              |
 | 16   | E2E verification                 | 1-2 hrs         | All                      |

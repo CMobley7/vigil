@@ -1,7 +1,7 @@
-"""Build Notion blocks for the Todoist sub-page.
+"""Build Markdown body for the Todoist sub-object.
 
 Fetches today's and overdue tasks from the Todoist REST API v2 and
-transforms them into Notion block dicts for the ✅ To-Do List sub-page.
+transforms them into a Markdown string for the ✅ To-Do List sub-object.
 """
 
 from __future__ import annotations
@@ -11,13 +11,12 @@ from typing import Any
 
 import httpx
 
+from anytype_client import md_bullet, md_heading, md_paragraph
 from fm_config import TODOIST_API_TOKEN
-from notion_client import bulleted_list, heading_2, paragraph
 
 logger = logging.getLogger(__name__)
 
 _TODOIST_API_URL = "https://api.todoist.com/rest/v2/tasks"
-
 
 # Todoist priority 4 = P1 (urgent), 1 = P4 (no priority)
 _PRIORITY_MAP: dict[int, str] = {4: "P1", 3: "P2", 2: "P3", 1: "P4"}
@@ -70,43 +69,38 @@ def fetch_todoist_tasks() -> list[dict[str, Any]]:
     return tasks
 
 
-def build_todoist_blocks(
-    tasks: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Build Notion blocks for the ✅ To-Do List sub-page.
+def build_todoist_body(tasks: list[dict[str, Any]]) -> str:
+    """Build Markdown body for the ✅ To-Do List sub-object.
 
     Args:
         tasks: Output of ``fetch_todoist_tasks()``.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the task list body.
     """
     if not tasks:
-        return [paragraph("No tasks scheduled for today. 🎉")]
+        return md_paragraph("No tasks scheduled for today. 🎉")
 
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
 
-    # Split into today's tasks and overdue
     today_tasks = [t for t in tasks if not t.get("is_overdue")]
     overdue_tasks = [t for t in tasks if t.get("is_overdue")]
 
     # -- Today's Tasks --
-    blocks.append(heading_2("Today's Tasks"))
+    sections.append(md_heading("Today's Tasks", level=2))
     if today_tasks:
         for task in today_tasks:
-            label = _format_task(task)
-            blocks.append(bulleted_list(label))
+            sections.append(md_bullet(_format_task(task)))
     else:
-        blocks.append(paragraph("No tasks for today."))
+        sections.append(md_paragraph("No tasks for today."))
 
     # -- Overdue --
     if overdue_tasks:
-        blocks.append(heading_2("Overdue"))
+        sections.append(md_heading("Overdue", level=2))
         for task in overdue_tasks:
-            label = f"⚠️ {_format_task(task)}"
-            blocks.append(bulleted_list(label))
+            sections.append(md_bullet(f"⚠️ {_format_task(task)}"))
 
-    return blocks
+    return "\n\n".join(sections)
 
 
 def _format_task(task: dict[str, Any]) -> str:

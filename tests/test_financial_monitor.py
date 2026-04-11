@@ -999,24 +999,24 @@ class TestMainStatusPartialDataWithHighAlerts:
 
 
 # ---------------------------------------------------------------------------
-# fm_config — _safe_json / _safe_int error paths
+# fm_config — safe_json / safe_int error paths
 # ---------------------------------------------------------------------------
 
 
 class TestSafeJsonInvalidInput:
     def test_invalid_json_exits(self) -> None:
-        from fm_config import _safe_json
+        from fm_config import safe_json
 
         with pytest.raises(SystemExit):
-            _safe_json("_TEST_BAD_VAR", "{invalid}")
+            safe_json("_TEST_BAD_VAR", "{invalid}")
 
 
 class TestSafeIntInvalidInput:
     def test_non_numeric_exits(self) -> None:
-        from fm_config import _safe_int
+        from fm_config import safe_int
 
         with pytest.raises(SystemExit):
-            _safe_int("_TEST_BAD_VAR", "not_an_int")
+            safe_int("_TEST_BAD_VAR", "not_an_int")
 
 
 # ---------------------------------------------------------------------------

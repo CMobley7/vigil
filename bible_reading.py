@@ -17,18 +17,16 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from fm_config import BOOKS_DIR, READING_PLAN_PATH
+
 logger = logging.getLogger(__name__)
 
-# Configuration via env vars
-READING_PLAN_PATH = os.environ.get("READING_PLAN_PATH", "data/reading_plan.json")
-BOOKS_DIR = Path(os.environ.get("BOOKS_DIR", "data/books"))
 
 # Expected filenames in BOOKS_DIR
 DEVOTIONAL_FILE = "good_morning_mercies.md"

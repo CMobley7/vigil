@@ -31,6 +31,7 @@ lint.select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "C90", "DTZ", "T20
 "weather_fetch.py" = ["T201"]
 "bible_reading.py" = ["T201", "C901"]
 "fm_fetchers.py" = ["C901"]
+"anytype_writer.py" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

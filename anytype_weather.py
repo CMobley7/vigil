@@ -1,26 +1,26 @@
-"""Build Notion blocks for the Weather sub-page.
+"""Build Markdown body for the Weather sub-object.
 
-Transforms the output of :func:`weather_fetch.fetch_weather` into
-Notion block dicts for the 🌤️ Weather sub-page.
+Transforms the output of :func:`weather_fetch.fetch_weather` into a
+Markdown string for the 🌤️ Weather sub-object.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from notion_client import heading_2, paragraph, table
+from anytype_client import md_heading, md_paragraph, md_table
 
 
-def build_weather_blocks(weather: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build Notion blocks for the 🌤️ Weather sub-page.
+def build_weather_body(weather: dict[str, Any]) -> str:
+    """Build Markdown body for the 🌤️ Weather sub-object.
 
     Args:
         weather: Output of ``fetch_weather()``.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the weather body.
     """
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
 
     hourly = weather.get("today_hourly", [])
     forecast = weather.get("ten_day_forecast", [])
@@ -32,9 +32,11 @@ def build_weather_blocks(weather: dict[str, Any]) -> list[dict[str, Any]]:
         desc = today.get("description", "")
         high = _fmt_temp(today.get("high_f"))
         low = _fmt_temp(today.get("low_f"))
-        blocks.append(heading_2(f"Today — {icon} {desc}, High {high} / Low {low}"))
+        sections.append(
+            md_heading(f"Today — {icon} {desc}, High {high} / Low {low}", level=2)
+        )
     else:
-        blocks.append(heading_2("Today — Weather data unavailable"))
+        sections.append(md_heading("Today — Weather data unavailable", level=2))
 
     # -- Hourly table (6 AM - 10 PM only) --
     if hourly:
@@ -51,14 +53,14 @@ def build_weather_blocks(weather: dict[str, Any]) -> list[dict[str, Any]]:
                 ]
                 for h in filtered
             ]
-            blocks.append(table(headers, rows))
+            sections.append(md_table(headers, rows))
         else:
-            blocks.append(paragraph("No hourly data in 6 AM - 10 PM range."))
+            sections.append(md_paragraph("No hourly data in 6 AM - 10 PM range."))
     else:
-        blocks.append(paragraph("Hourly forecast data unavailable."))
+        sections.append(md_paragraph("Hourly forecast data unavailable."))
 
     # -- 10-day forecast table --
-    blocks.append(heading_2("10-Day Forecast"))
+    sections.append(md_heading("10-Day Forecast", level=2))
 
     if forecast:
         headers = ["Day", "High", "Low", "Precip%", "Conditions"]
@@ -72,11 +74,11 @@ def build_weather_blocks(weather: dict[str, Any]) -> list[dict[str, Any]]:
             ]
             for day in forecast
         ]
-        blocks.append(table(headers, rows))
+        sections.append(md_table(headers, rows))
     else:
-        blocks.append(paragraph("10-day forecast data unavailable."))
+        sections.append(md_paragraph("10-day forecast data unavailable."))
 
-    return blocks
+    return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------

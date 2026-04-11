@@ -1,4 +1,4 @@
-"""Build Notion blocks for the Birthdays sub-page.
+"""Build Markdown body for the Birthdays sub-object.
 
 Checks ``contacts.json`` for contacts whose birthday matches today.
 Optionally calls Claude Sonnet via OpenRouter for personalized messages.
@@ -14,8 +14,8 @@ from typing import Any
 
 import httpx
 
+from anytype_client import md_heading, md_paragraph
 from fm_config import BIRTHDAY_USE_LLM, CONTACTS_PATH, OPENROUTER_API_KEY
-from notion_client import heading_2, paragraph
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,6 @@ def check_birthdays_today(
             continue
         # birthday format: YYYY-MM-DD → extract MM-DD
         if birthday[5:] == today_mmdd:
-            # Calculate age
             birth_year = int(birthday[:4])
             age = datetime.now(tz=UTC).year - birth_year
             matches.append({**contact, "age": age})
@@ -65,39 +64,37 @@ def check_birthdays_today(
     return matches
 
 
-def build_birthday_blocks(
-    birthdays: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Build Notion blocks for the 🎂 Birthdays sub-page.
+def build_birthday_body(birthdays: list[dict[str, Any]]) -> str:
+    """Build Markdown body for the 🎂 Birthdays sub-object.
 
     Args:
         birthdays: List of contact dicts with today's birthday.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the birthday body.
     """
     if not birthdays:
-        return [paragraph("No birthdays today.")]
+        return md_paragraph("No birthdays today.")
 
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
 
     for contact in birthdays:
         name = contact.get("name", "Unknown")
         age = contact.get("age", "?")
         relationship = contact.get("relationship", "")
 
-        blocks.append(heading_2(f"🎂 Happy Birthday, {name}!"))
+        sections.append(md_heading(f"🎂 Happy Birthday, {name}!", level=2))
 
         meta = f"Age: {age}"
         if relationship:
             meta += f" | Relationship: {relationship}"
-        blocks.append(paragraph(meta))
+        sections.append(md_paragraph(meta))
 
         # Draft message
         message = _draft_birthday_message(name)
-        blocks.append(paragraph(message))
+        sections.append(md_paragraph(message))
 
-    return blocks
+    return "\n\n".join(sections)
 
 
 def _draft_birthday_message(name: str) -> str:
@@ -114,7 +111,7 @@ def _draft_birthday_message(name: str) -> str:
 
     try:
         return _call_sonnet_for_message(name)
-    except Exception as exc:
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
         logger.warning(
             "LLM birthday message failed for %s: %s — using stub",
             name,

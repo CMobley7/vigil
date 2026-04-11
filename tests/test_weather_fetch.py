@@ -143,7 +143,7 @@ class TestEnvVarDefaults:
 
 class TestSafeFloatInvalidInput:
     def test_non_numeric_exits(self) -> None:
-        from fm_config import _safe_float
+        from fm_config import safe_float
 
         with pytest.raises(SystemExit):
-            _safe_float("_TEST_BAD_VAR", "not_a_number")
+            safe_float("_TEST_BAD_VAR", "not_a_number")

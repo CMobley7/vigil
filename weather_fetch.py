@@ -3,7 +3,7 @@
 
 Uses the Open-Meteo free API (no key needed) via ``httpx``.
 Outputs JSON with today's hourly breakdown and a 10-day forecast,
-including WMO weather code → emoji mapping for Notion pages.
+including WMO weather code → emoji mapping for daily brief objects.
 
 Usage:
     python3 weather_fetch.py
@@ -25,14 +25,14 @@ from typing import Any
 
 import httpx
 
-from fm_config import _safe_float
+from fm_config import safe_float
 
 logger = logging.getLogger(__name__)
 
 
 # Configuration via env vars
-LATITUDE = _safe_float("WEATHER_LAT", "35.2271")
-LONGITUDE = _safe_float("WEATHER_LON", "-80.8431")
+LATITUDE = safe_float("WEATHER_LAT", "35.2271")
+LONGITUDE = safe_float("WEATHER_LON", "-80.8431")
 TIMEZONE = os.environ.get("WEATHER_TZ", "America/New_York")
 
 # Open-Meteo API endpoint (free, no key needed)

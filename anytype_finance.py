@@ -1,12 +1,12 @@
-"""Build Notion blocks for the Finance sub-page.
+"""Build Markdown body for the Finance sub-object.
 
-Transforms ``financial_monitor.py`` JSON output into Notion block dicts
-for the 📈 Stocks & Finances sub-page (data tables only — the LLM adds
+Transforms ``financial_monitor.py`` JSON output into a Markdown string
+for the 📈 Stocks & Finances sub-object (data tables only — the LLM adds
 editorial content in Phase 2).
 
 CLI usage (called by Phase 2 LLM after writing editorial)::
 
-    python3 notion_finance.py
+    python3 anytype_finance.py
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fm_config import NOTION_TOKEN
-from notion_client import NotionClient, heading_2, paragraph, table
+from anytype_client import AnytypeClient, md_heading, md_paragraph, md_table
+from fm_config import ANYTYPE_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ _STATE_FILE = Path("/tmp/daily_brief_state.json")  # noqa: S108
 _FM_CACHE_FILE = Path("/tmp/daily_brief_fm_output.json")  # noqa: S108
 
 
-def build_finance_blocks(fm_output: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build Notion blocks for the 📈 Stocks & Finances sub-page.
+def build_finance_body(fm_output: dict[str, Any]) -> str:
+    """Build Markdown body for the 📈 Stocks & Finances sub-object.
 
     Creates portfolio summary table, account balances table, and recent
     transactions table.  Editorial sections (Action Items, Economy
@@ -37,20 +37,15 @@ def build_finance_blocks(fm_output: dict[str, Any]) -> list[dict[str, Any]]:
         fm_output: Parsed JSON output of ``financial_monitor.py``.
 
     Returns:
-        List of Notion block dicts.
+        Markdown string for the finance body.
     """
-    blocks: list[dict[str, Any]] = []
+    sections: list[str] = []
 
-    # -- Portfolio Summary --
-    blocks.extend(_build_portfolio_section(fm_output))
+    sections.extend(_build_portfolio_section(fm_output))
+    sections.extend(_build_balances_section(fm_output))
+    sections.extend(_build_transactions_section(fm_output))
 
-    # -- Account Balances --
-    blocks.extend(_build_balances_section(fm_output))
-
-    # -- Recent Transactions --
-    blocks.extend(_build_transactions_section(fm_output))
-
-    return blocks
+    return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -58,20 +53,17 @@ def build_finance_blocks(fm_output: dict[str, Any]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _build_portfolio_section(
-    fm_output: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Build portfolio summary blocks.
+def _build_portfolio_section(fm_output: dict[str, Any]) -> list[str]:
+    """Build portfolio summary Markdown sections.
 
     Args:
         fm_output: Financial monitor output dict.
     """
-    blocks: list[dict[str, Any]] = []
-    blocks.append(heading_2("📊 Portfolio Summary"))
+    sections: list[str] = [md_heading("📊 Portfolio Summary", level=2)]
 
     total = fm_output.get("total_portfolio_value")
     if total is not None:
-        blocks.append(paragraph(f"Total Portfolio Value: ${total:,.2f}"))
+        sections.append(md_paragraph(f"Total Portfolio Value: ${total:,.2f}"))
 
     brokerage = fm_output.get("brokerage_data", {})
     holdings: list[dict[str, Any]] = brokerage.get("holdings", [])
@@ -103,23 +95,20 @@ def _build_portfolio_section(
                     _fmt_pct(h.get("target_weight")),
                 ]
             )
-        blocks.append(table(headers, rows))
+        sections.append(md_table(headers, rows))
     else:
-        blocks.append(paragraph("No holdings data available."))
+        sections.append(md_paragraph("No holdings data available."))
 
-    return blocks
+    return sections
 
 
-def _build_balances_section(
-    fm_output: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Build account balances blocks.
+def _build_balances_section(fm_output: dict[str, Any]) -> list[str]:
+    """Build account balances Markdown sections.
 
     Args:
         fm_output: Financial monitor output dict.
     """
-    blocks: list[dict[str, Any]] = []
-    blocks.append(heading_2("💰 Account Balances"))
+    sections: list[str] = [md_heading("💰 Account Balances", level=2)]
 
     bank_data = fm_output.get("bank_data", {})
     balances: list[dict[str, Any]] = bank_data.get("balances", [])
@@ -134,28 +123,26 @@ def _build_balances_section(
             ]
             for b in balances
         ]
-        blocks.append(table(headers, rows))
+        sections.append(md_table(headers, rows))
     else:
-        blocks.append(paragraph("No account balance data available."))
+        sections.append(md_paragraph("No account balance data available."))
 
-    return blocks
+    return sections
 
 
-def _build_transactions_section(
-    fm_output: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Build recent transactions blocks.
+def _build_transactions_section(fm_output: dict[str, Any]) -> list[str]:
+    """Build recent transactions Markdown sections.
 
     Args:
         fm_output: Financial monitor output dict.
     """
-    blocks: list[dict[str, Any]] = []
-
     bank_data = fm_output.get("bank_data", {})
     txns: list[dict[str, Any]] = bank_data.get("transactions", [])
 
     count = len(txns)
-    blocks.append(heading_2(f"🏦 Recent Transactions (last {count})"))
+    sections: list[str] = [
+        md_heading(f"🏦 Recent Transactions (last {count})", level=2)
+    ]
 
     if txns:
         headers = ["Date", "Amount", "Description", "Bank"]
@@ -168,11 +155,11 @@ def _build_transactions_section(
             ]
             for t in txns
         ]
-        blocks.append(table(headers, rows))
+        sections.append(md_table(headers, rows))
     else:
-        blocks.append(paragraph("No recent transactions available."))
+        sections.append(md_paragraph("No recent transactions available."))
 
-    return blocks
+    return sections
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +195,9 @@ def _fmt_pct(val: float | int | None) -> str:
 
 
 def main() -> None:
-    """Append finance data tables to existing 📈 page.
+    """Update finance object body with data tables.
 
-    Reads ``/tmp/daily_brief_state.json`` for the finance page ID and
+    Reads ``/tmp/daily_brief_state.json`` for the finance object ID and
     ``/tmp/daily_brief_fm_output.json`` for cached FM data.  Called by the
     Phase 2 LLM as its final step to place data tables below editorial.
     """
@@ -220,8 +207,8 @@ def main() -> None:
         stream=sys.stderr,
     )
 
-    if not NOTION_TOKEN:
-        logger.error("NOTION_TOKEN not set -- aborting")
+    if not ANYTYPE_API_KEY:
+        logger.error("ANYTYPE_API_KEY not set -- aborting")
         sys.exit(1)
 
     try:
@@ -236,13 +223,19 @@ def main() -> None:
         logger.error("Cannot read FM cache file: %s", exc)
         sys.exit(1)
 
-    finance_page_id: str | None = state.get("sub_pages", {}).get("finance")
-    if not finance_page_id:
-        logger.error("No finance page ID in state file")
+    space_id: str = state.get("space_id", "")
+    finance_object_id: str | None = state.get("sub_objects", {}).get("finance")
+
+    if not finance_object_id:
+        logger.error("No finance object ID in state file")
         sys.exit(1)
 
-    client = NotionClient(NOTION_TOKEN)
-    client.append_blocks(finance_page_id, build_finance_blocks(fm_output))
+    client = AnytypeClient(ANYTYPE_API_KEY)
+    client.update_object(
+        space_id,
+        finance_object_id,
+        body=build_finance_body(fm_output),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

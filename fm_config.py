@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _safe_json(var: str, default: str) -> Any:  # noqa: ANN401 — parsed JSON is inherently untyped
+def safe_json(var: str, default: str) -> Any:  # noqa: ANN401 — parsed JSON is inherently untyped
     """Parse JSON from an environment variable with a clear error on failure.
 
     Args:
@@ -37,7 +38,7 @@ def _safe_json(var: str, default: str) -> Any:  # noqa: ANN401 — parsed JSON i
         sys.exit(1)
 
 
-def _safe_int(var: str, default: str) -> int:
+def safe_int(var: str, default: str) -> int:
     """Parse an int from an environment variable with a clear error on failure.
 
     Args:
@@ -55,7 +56,7 @@ def _safe_int(var: str, default: str) -> int:
         sys.exit(1)
 
 
-def _safe_float(var: str, default: str) -> float:
+def safe_float(var: str, default: str) -> float:
     """Parse a float from an environment variable with a clear error on failure.
 
     Args:
@@ -80,10 +81,10 @@ SNAPTRADE_USER_ID = os.environ.get("SNAPTRADE_USER_ID", "")
 SNAPTRADE_USER_SECRET = os.environ.get("SNAPTRADE_USER_SECRET", "")
 
 # Account name mapping (SnapTrade account names → portfolio categories)
-ACCOUNT_MAP: dict[str, str] = _safe_json("ACCOUNT_MAP", "{}")
+ACCOUNT_MAP: dict[str, str] = safe_json("ACCOUNT_MAP", "{}")
 
 # OFX bank config — JSON array of banks, each with accounts
-OFX_BANKS_CONFIG: list[dict[str, Any]] = _safe_json("OFX_BANKS_CONFIG", "[]")
+OFX_BANKS_CONFIG: list[dict[str, Any]] = safe_json("OFX_BANKS_CONFIG", "[]")
 
 # Directory for manually downloaded QFX/OFX statement files (e.g., Chase credit cards)
 OFX_STATEMENTS_DIR = os.environ.get("OFX_STATEMENTS_DIR", "")
@@ -94,16 +95,16 @@ CHECKLIST_PATH = os.environ.get("CHECKLIST_PATH", "data/financial_checklist.md")
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
 # How many days of transactions to look back for red-flag checks
-LOOKBACK_DAYS = _safe_int("LOOKBACK_DAYS", "7")
+LOOKBACK_DAYS = safe_int("LOOKBACK_DAYS", "7")
 
 # Max transactions to include in output (most recent, sorted by date desc)
-MAX_RECENT_TRANSACTIONS = _safe_int("MAX_RECENT_TRANSACTIONS", "10")
+MAX_RECENT_TRANSACTIONS = safe_int("MAX_RECENT_TRANSACTIONS", "10")
 
 # Large transaction threshold (in dollars)
-LARGE_TRANSACTION_THRESHOLD = _safe_float("LARGE_TRANSACTION_THRESHOLD", "500")
+LARGE_TRANSACTION_THRESHOLD = safe_float("LARGE_TRANSACTION_THRESHOLD", "500")
 
 # Low balance threshold (in dollars)
-LOW_BALANCE_THRESHOLD = _safe_float("LOW_BALANCE_THRESHOLD", "1000")
+LOW_BALANCE_THRESHOLD = safe_float("LOW_BALANCE_THRESHOLD", "1000")
 
 # Known vendors (pipe-separated) — transactions from these won't trigger alerts
 KNOWN_VENDORS: list[str] = (
@@ -113,15 +114,21 @@ KNOWN_VENDORS: list[str] = (
 )
 
 # ---------------------------------------------------------------------------
-# Notion API
+# Anytype API
 # ---------------------------------------------------------------------------
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
-NOTION_DAILY_BRIEFS_DB = os.environ.get("NOTION_DAILY_BRIEFS_DB", "")
+ANYTYPE_API_KEY = os.environ.get("ANYTYPE_API_KEY", "")
+ANYTYPE_SPACE_ID = os.environ.get("ANYTYPE_SPACE_ID", "")
 
 # ---------------------------------------------------------------------------
 # Todoist (read-only, for daily brief task list display)
 # ---------------------------------------------------------------------------
 TODOIST_API_TOKEN = os.environ.get("TODOIST_API_TOKEN", "")
+
+# ---------------------------------------------------------------------------
+# Bible Reading
+# ---------------------------------------------------------------------------
+READING_PLAN_PATH = os.environ.get("READING_PLAN_PATH", "data/reading_plan.json")
+BOOKS_DIR = Path(os.environ.get("BOOKS_DIR", "data/books"))
 
 # ---------------------------------------------------------------------------
 # Birthdays
