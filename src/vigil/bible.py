@@ -20,10 +20,10 @@ import json
 import logging
 import re
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from vigil.clock import local_today_iso
 from vigil.config import BOOKS_DIR, READING_PLAN_PATH
 
 logger = logging.getLogger(__name__)
@@ -259,7 +259,7 @@ def extract_today_reading() -> dict[str, Any]:
     Returns:
         Dict with ``date``, ``morning_devotional``, ``bible_reading`` keys.
     """
-    today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+    today = local_today_iso()
 
     # Load reading plan
     plan_path = Path(READING_PLAN_PATH)

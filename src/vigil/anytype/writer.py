@@ -2,7 +2,7 @@
 
 Creates the daily brief parent object and all deterministic sub-objects
 (Bible, weather, Todoist, finances, birthdays) in the configured Anytype
-space.  Writes a state file at ``/tmp/daily_brief_state.json`` for the
+space.  Writes private state/cache files under ``VIGIL_RUNTIME_DIR`` for the
 Phase 2 LLM sweep.
 
 Usage::
@@ -17,8 +17,6 @@ import json
 import logging
 import subprocess
 import sys
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from vigil.anytype.bible import (
@@ -30,17 +28,19 @@ from vigil.anytype.client import AnytypeClient
 from vigil.anytype.todoist import build_todoist_body, fetch_todoist_tasks
 from vigil.anytype.weather import build_weather_body
 from vigil.bible import extract_today_reading
+from vigil.clock import local_display_date
 from vigil.config import (
     ANYTYPE_API_KEY,
     ANYTYPE_SPACE_ID,
     CONTACTS_PATH,
 )
+from vigil.runtime import FM_CACHE_FILE, STATE_FILE, write_private_text
 from vigil.weather import fetch_weather
 
 logger = logging.getLogger(__name__)
 
-_STATE_FILE = Path("/tmp/daily_brief_state.json")  # noqa: S108 — intentional handoff path for Phase 2 LLM
-_FM_CACHE_FILE = Path("/tmp/daily_brief_fm_output.json")  # noqa: S108 — cache for Phase 2
+_STATE_FILE = STATE_FILE
+_FM_CACHE_FILE = FM_CACHE_FILE
 
 
 def main() -> None:
@@ -61,7 +61,7 @@ def main() -> None:
     client = AnytypeClient(ANYTYPE_API_KEY)
 
     # 1. Create parent object in the Daily Briefs space
-    today = datetime.now(tz=UTC).strftime("%A, %B %-d, %Y")
+    today = local_display_date()
     parent_id = client.create_object(
         space_id=ANYTYPE_SPACE_ID,
         name=f"📋 Daily Brief — {today}",
@@ -143,7 +143,7 @@ def main() -> None:
             text=True,
             timeout=120,
         )
-        _FM_CACHE_FILE.write_text(fm_raw)
+        write_private_text(_FM_CACHE_FILE, fm_raw)
         finance_id = client.create_object(
             space_id=ANYTYPE_SPACE_ID,
             name=f"📈 Stocks & Finances — {today}",
@@ -178,7 +178,7 @@ def main() -> None:
         "parent_object_id": parent_id,
         "sub_objects": sub_objects,
     }
-    _STATE_FILE.write_text(json.dumps(state, indent=2))
+    write_private_text(_STATE_FILE, json.dumps(state, indent=2))
     print(json.dumps(state, indent=2))  # stdout for cron logging
 
 

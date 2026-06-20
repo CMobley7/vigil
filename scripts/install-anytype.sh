@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Install Anytype Heart (headless CLI) on Linux.
 #
-# Auto-detects architecture, downloads the latest release from GitHub,
-# installs the binary to /usr/local/bin, and creates a systemd service.
+# Auto-detects architecture, downloads a pinned release from GitHub, installs
+# the binary to /usr/local/bin, and creates a systemd service.
 #
 # Usage:
 #   sudo ./scripts/install-anytype.sh
 #
 # Environment variables:
-#   ANYTYPE_VERSION  — pin a specific version tag (default: latest)
-#   ANYTYPE_USER     — system user to run the service (default: openclaw)
+#   ANYTYPE_VERSION        — required version tag to install (e.g., v0.35.0)
+#   ANYTYPE_SHA256         — expected SHA-256 of the downloaded tarball
+#   ANYTYPE_ALLOW_LATEST   — set to true to resolve the latest release
+#   ANYTYPE_SKIP_CHECKSUM  — set to true only for exploratory installs
+#   ANYTYPE_USER           — system user to run the service (default: openclaw)
 
 set -euo pipefail
 
@@ -22,6 +25,9 @@ ANYTYPE_USER="${ANYTYPE_USER:-openclaw}"
 ANYTYPE_DATA_DIR="/var/lib/anytype"
 GITHUB_REPO="anyproto/anytype-heart"
 VERSION="${ANYTYPE_VERSION:-}"
+ALLOW_LATEST="${ANYTYPE_ALLOW_LATEST:-false}"
+EXPECTED_SHA256="${ANYTYPE_SHA256:-}"
+SKIP_CHECKSUM="${ANYTYPE_SKIP_CHECKSUM:-false}"
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -33,6 +39,7 @@ fi
 
 command -v curl >/dev/null 2>&1 || { echo "Error: curl is required." >&2; exit 1; }
 command -v tar >/dev/null 2>&1 || { echo "Error: tar is required." >&2; exit 1; }
+command -v sha256sum >/dev/null 2>&1 || { echo "Error: sha256sum is required." >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Detect architecture
@@ -52,6 +59,12 @@ echo "→ Detected architecture: ${ARCH} (${ARCH_SUFFIX})"
 # ---------------------------------------------------------------------------
 # Resolve version
 # ---------------------------------------------------------------------------
+if [[ -z "$VERSION" && "$ALLOW_LATEST" != "true" ]]; then
+    echo "Error: ANYTYPE_VERSION is required for reproducible installs." >&2
+    echo "Set ANYTYPE_ALLOW_LATEST=true only for exploratory installs." >&2
+    exit 1
+fi
+
 if [[ -z "$VERSION" ]]; then
     echo "→ Fetching latest release tag from GitHub..."
     VERSION="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
@@ -81,6 +94,18 @@ if ! curl -fSL -o "${TMP_DIR}/${TARBALL}" "$DOWNLOAD_URL"; then
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${TARBALL}"
     echo "→ Retrying with fallback URL: ${DOWNLOAD_URL}..."
     curl -fSL -o "${TMP_DIR}/${TARBALL}" "$DOWNLOAD_URL"
+fi
+
+if [[ -n "$EXPECTED_SHA256" ]]; then
+    echo "→ Verifying SHA-256..."
+    printf '%s  %s\n' "$EXPECTED_SHA256" "${TMP_DIR}/${TARBALL}" | sha256sum -c -
+elif [[ "$SKIP_CHECKSUM" == "true" ]]; then
+    echo "⚠ ANYTYPE_SKIP_CHECKSUM=true; downloaded tarball was not verified." >&2
+else
+    echo "Error: ANYTYPE_SHA256 is required to verify the downloaded tarball." >&2
+    echo "Set ANYTYPE_SKIP_CHECKSUM=true only for exploratory installs." >&2
+    rm -rf "${TMP_DIR}"
+    exit 1
 fi
 
 echo "→ Extracting..."

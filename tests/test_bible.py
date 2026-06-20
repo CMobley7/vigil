@@ -197,12 +197,8 @@ class TestMissingMarkdownFile:
         with (
             patch("vigil.bible.READING_PLAN_PATH", str(plan_file)),
             patch("vigil.bible.BOOKS_DIR", tmp_path / "books"),
-            patch(
-                "vigil.bible.datetime",
-            ) as mock_dt,
+            patch("vigil.bible.local_today_iso", return_value="2026-03-10"),
         ):
-            mock_dt.now.return_value.strftime.return_value = "2026-03-10"
-            mock_dt.fromisoformat = lambda s: s
             result = extract_today_reading()
 
         assert result["bible_reading"]["reference"] == "Genesis 1-3"
@@ -222,12 +218,8 @@ class TestOutputSchemaValid:
         with (
             patch("vigil.bible.READING_PLAN_PATH", str(plan_file)),
             patch("vigil.bible.BOOKS_DIR", books_dir),
-            patch(
-                "vigil.bible.datetime",
-            ) as mock_dt,
+            patch("vigil.bible.local_today_iso", return_value="2026-03-10"),
         ):
-            mock_dt.now.return_value.strftime.return_value = "2026-03-10"
-            mock_dt.fromisoformat = lambda s: s
             result = extract_today_reading()
 
         assert "date" in result
@@ -320,10 +312,8 @@ class TestBibleReadingMain:
         with (
             patch("vigil.bible.READING_PLAN_PATH", str(plan_file)),
             patch("vigil.bible.BOOKS_DIR", books_dir),
-            patch("vigil.bible.datetime") as mock_dt,
+            patch("vigil.bible.local_today_iso", return_value="2026-03-10"),
         ):
-            mock_dt.now.return_value.strftime.return_value = "2026-03-10"
-            mock_dt.fromisoformat = lambda s: s
             main()
 
         captured = capsys.readouterr()
@@ -385,10 +375,8 @@ class TestStudyNotesExtraction:
         with (
             patch("vigil.bible.READING_PLAN_PATH", str(plan_file)),
             patch("vigil.bible.BOOKS_DIR", books_dir),
-            patch("vigil.bible.datetime") as mock_dt,
+            patch("vigil.bible.local_today_iso", return_value="2026-03-10"),
         ):
-            mock_dt.now.return_value.strftime.return_value = "2026-03-10"
-            mock_dt.fromisoformat = lambda s: s
             result = extract_today_reading()
 
         assert result["bible_reading"]["study_notes"]["reformation"] is not None

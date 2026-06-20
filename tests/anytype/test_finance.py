@@ -66,6 +66,46 @@ def _sample_fm_output() -> dict[str, Any]:
     }
 
 
+def _sample_real_monitor_output() -> dict[str, Any]:
+    """Return output shaped like vigil.financial.monitor emits."""
+    return {
+        "total_portfolio_value": 50000.0,
+        "brokerage_data": {
+            "accounts": [
+                {
+                    "name": "PCRA - ROTH",
+                    "category": "Roth",
+                    "total_value": 50000.0,
+                    "holdings": [
+                        {
+                            "ticker": "SMH",
+                            "shares": 100.0,
+                            "price": 300.0,
+                            "market_value": 30000.0,
+                            "avg_cost": 250.0,
+                            "unrealized_gain": 5000.0,
+                            "unrealized_gain_pct": 20.0,
+                            "actual_pct": 60.0,
+                        },
+                    ],
+                },
+            ],
+        },
+        "bank_data": {
+            "transactions": [
+                {
+                    "date": "2026-04-09",
+                    "amount": -150.0,
+                    "name": "Grocery Store",
+                    "memo": "",
+                    "bank": "BankA",
+                },
+            ],
+            "balances": [],
+        },
+    }
+
+
 class TestBuildFinanceBody:
     """Tests for build_finance_body."""
 
@@ -104,6 +144,18 @@ class TestBuildFinanceBody:
     def test_is_markdown_table(self) -> None:
         result = build_finance_body(_sample_fm_output())
         assert "| Ticker |" in result or "Ticker" in result
+
+    def test_renders_real_financial_monitor_shape(self) -> None:
+        """Finance body must render nested accounts and transaction names."""
+        result = build_finance_body(_sample_real_monitor_output())
+
+        assert "PCRA - ROTH" in result
+        assert "SMH" in result
+        assert "$30,000.00" in result
+        assert "60.0%" in result
+        assert "38.0%" in result
+        assert "Grocery Store" in result
+        assert "No holdings data available" not in result
 
 
 class TestMain:

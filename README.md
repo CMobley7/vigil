@@ -11,18 +11,18 @@ all deterministic sub-objects in Anytype: Bible devotionals, weather
 forecast, Todoist tasks, financial alerts, and birthday checks. Produces a
 state file for Phase 2.
 
-**Phase 2 (6:40 AM, LLM):** An OpenClaw cron job reads the state file and
-fills in the intelligence-dependent sub-objects: message summaries, drafted
-replies, financial editorial, and a morning message with AI-generated
-images.
+**Phase 2 (6:40 AM, LLM):** An OpenClaw or Hermes Agent cron job reads the
+state file and fills in the intelligence-dependent sub-objects: message
+summaries, drafted replies, financial editorial, and a morning message with
+AI-generated images.
 
 **Phase 3 (every 3 hours, LLM):** A periodic sweep cron job checks for new
 messages, calendar changes, and financial alerts throughout the day — keeping
 the daily brief current without manual intervention.
 
 All three phases run unattended via cron on a VPS. Phase 1 is pure Python
-(zero LLM cost). Phases 2 and 3 use OpenClaw with version-controlled RISEN
-prompts from `prompts/`.
+(zero LLM cost). Phases 2 and 3 use OpenClaw or Hermes Agent with
+version-controlled RISEN prompts from `prompts/`.
 
 ## Package Layout
 
@@ -52,9 +52,10 @@ src/vigil/
 ```bash
 uv sync --dev              # install dependencies
 cp .env.example .env       # fill in your API keys
-vigil brief                # run Phase 1 (creates Anytype objects)
-vigil monitor              # run standalone financial monitor
-vigil --help               # see all available commands
+set -a; source .env; set +a # load env vars; Vigil does not auto-load .env
+uv run vigil brief         # run Phase 1 (creates Anytype objects)
+uv run vigil monitor       # run standalone financial monitor
+uv run vigil --help        # see all available commands
 ```
 
 ## Quality Gates
@@ -69,6 +70,8 @@ vigil --help               # see all available commands
 | Variable | Description |
 |---|---|
 | `VIGIL_DATA_DIR` | Root data directory (default: `data/`) — sub-paths derive from this |
+| `VIGIL_RUNTIME_DIR` | Private runtime directory for Phase 2 state/cache files |
+| `VIGIL_TIMEZONE` | Local date boundary for daily briefs, Todoist, and birthdays |
 | `ANYTYPE_API_KEY` | Anytype API key |
 | `ANYTYPE_SPACE_ID` | Anytype space ID for the Daily Briefs space |
 | `TODOIST_API_TOKEN` | Todoist API token |
@@ -92,17 +95,18 @@ See `data/examples/` for schema examples.
 
 ## Deployment
 
-Full VPS deployment instructions — including Anytype setup, cron scheduling,
-OpenClaw configuration, and all three phases — are in
-[`docs/setup-guide.md`](docs/setup-guide.md).
+Full VPS deployment instructions are available in two variants:
+
+- [`docs/setup-guide-openclaw.md`](docs/setup-guide-openclaw.md)
+- [`docs/setup-guide-hermes.md`](docs/setup-guide-hermes.md)
 
 ## Prompts
 
-Version-controlled RISEN prompts for OpenClaw cron jobs:
+Version-controlled RISEN prompts for OpenClaw or Hermes Agent cron jobs:
 
 | File | Used by |
 |---|---|
-| `prompts/heartbeat.md` | OpenClaw periodic heartbeat check |
+| `prompts/heartbeat.md` | Agent periodic heartbeat check |
 | `prompts/morning_sweep.md` | Phase 2 LLM morning sweep (6:40 AM) |
 | `prompts/periodic_sweep.md` | Every-3-hour message check |
 
@@ -118,10 +122,10 @@ One-time setup prompts for initial data preparation:
 ## Tests
 
 ```bash
-uv run pytest                        # run all 221 tests
+uv run pytest                        # run all 237 tests
 uv run pytest tests/anytype/         # anytype module tests only
 uv run pytest tests/financial/       # financial module tests only
 uv run pytest tests/test_cli.py      # CLI dispatch tests
 ```
 
-Coverage: 97.86% across `src/vigil/`.
+Coverage: 97.36% across `src/vigil/`.

@@ -25,12 +25,7 @@ class TestCheckBirthdaysToday:
         result = check_birthdays_today(str(path))
         assert isinstance(result, list)
 
-    @patch("vigil.anytype.birthdays.datetime")
-    def test_matches_today(self, mock_dt: MagicMock, tmp_path: Path) -> None:
-        mock_now = mock_dt.now.return_value
-        mock_now.strftime.return_value = "04-10"
-        mock_now.year = 2026
-
+    def test_matches_today(self, tmp_path: Path) -> None:
         contacts = [
             {"name": "John", "birthday": "1990-04-10", "relationship": "friend"},
             {"name": "Jane", "birthday": "1992-06-15"},
@@ -38,7 +33,12 @@ class TestCheckBirthdaysToday:
         path = tmp_path / "contacts.json"
         path.write_text(json.dumps(contacts))
 
-        result = check_birthdays_today(str(path))
+        with (
+            patch("vigil.anytype.birthdays.local_today_mmdd", return_value="04-10"),
+            patch("vigil.anytype.birthdays.local_year", return_value=2026),
+        ):
+            result = check_birthdays_today(str(path))
+
         assert len(result) == 1
         assert result[0]["name"] == "John"
         assert result[0]["age"] == 36
@@ -49,14 +49,7 @@ class TestCheckBirthdaysToday:
         result = check_birthdays_today(str(bad_file))
         assert result == []
 
-    @patch("vigil.anytype.birthdays.datetime")
-    def test_contact_without_birthday_skipped(
-        self, mock_dt: MagicMock, tmp_path: Path
-    ) -> None:
-        mock_now = mock_dt.now.return_value
-        mock_now.strftime.return_value = "04-10"
-        mock_now.year = 2026
-
+    def test_contact_without_birthday_skipped(self, tmp_path: Path) -> None:
         contacts = [
             {"name": "NoBday"},
             {"name": "EmptyBday", "birthday": ""},
@@ -65,7 +58,12 @@ class TestCheckBirthdaysToday:
         path = tmp_path / "contacts.json"
         path.write_text(json.dumps(contacts))
 
-        result = check_birthdays_today(str(path))
+        with (
+            patch("vigil.anytype.birthdays.local_today_mmdd", return_value="04-10"),
+            patch("vigil.anytype.birthdays.local_year", return_value=2026),
+        ):
+            result = check_birthdays_today(str(path))
+
         assert len(result) == 1
         assert result[0]["name"] == "Match"
 

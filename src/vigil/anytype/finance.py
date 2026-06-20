@@ -14,16 +14,16 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from pathlib import Path
 from typing import Any
 
 from vigil.anytype.client import AnytypeClient, md_heading, md_paragraph, md_table
-from vigil.config import ANYTYPE_API_KEY
+from vigil.config import ANYTYPE_API_KEY, TARGETS_BY_CATEGORY
+from vigil.runtime import FM_CACHE_FILE, STATE_FILE
 
 logger = logging.getLogger(__name__)
 
-_STATE_FILE = Path("/tmp/daily_brief_state.json")  # noqa: S108
-_FM_CACHE_FILE = Path("/tmp/daily_brief_fm_output.json")  # noqa: S108
+_STATE_FILE = STATE_FILE
+_FM_CACHE_FILE = FM_CACHE_FILE
 
 
 def build_finance_body(fm_output: dict[str, Any]) -> str:
@@ -65,14 +65,15 @@ def _build_portfolio_section(fm_output: dict[str, Any]) -> list[str]:
     if total is not None:
         sections.append(md_paragraph(f"Total Portfolio Value: ${total:,.2f}"))
 
-    brokerage = fm_output.get("brokerage_data", {})
-    holdings: list[dict[str, Any]] = brokerage.get("holdings", [])
+    holdings = _normalize_holdings(fm_output)
 
     if holdings:
         headers = [
+            "Account",
             "Ticker",
             "Shares",
             "Price",
+            "Market Value",
             "Avg Cost",
             "Gain/Loss",
             "Gain%",
@@ -85,14 +86,16 @@ def _build_portfolio_section(fm_output: dict[str, Any]) -> list[str]:
             gain_pct = h.get("unrealized_gain_pct", 0)
             rows.append(
                 [
+                    str(h.get("account", "")),
                     str(h.get("ticker", "")),
                     str(h.get("shares", "")),
-                    _fmt_dollar(h.get("current_price")),
+                    _fmt_dollar(h.get("price")),
+                    _fmt_dollar(h.get("market_value")),
                     _fmt_dollar(h.get("avg_cost")),
                     _fmt_dollar(gain),
                     f"{gain_pct:+.1f}%" if gain_pct is not None else "—",
-                    _fmt_pct(h.get("actual_weight")),
-                    _fmt_pct(h.get("target_weight")),
+                    _fmt_pct(h.get("actual_pct")),
+                    _fmt_pct(h.get("target_pct")),
                 ]
             )
         sections.append(md_table(headers, rows))
@@ -150,7 +153,7 @@ def _build_transactions_section(fm_output: dict[str, Any]) -> list[str]:
             [
                 str(t.get("date", "")),
                 _fmt_dollar(t.get("amount")),
-                str(t.get("description", "")),
+                _transaction_description(t),
                 str(t.get("bank", "")),
             ]
             for t in txns
@@ -165,6 +168,78 @@ def _build_transactions_section(fm_output: dict[str, Any]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
+
+
+def _normalize_holdings(fm_output: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize legacy and current financial monitor holdings shapes."""
+    brokerage = fm_output.get("brokerage_data")
+    if not isinstance(brokerage, dict):
+        return []
+
+    accounts = brokerage.get("accounts")
+    if isinstance(accounts, list):
+        normalized: list[dict[str, Any]] = []
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            account_name = str(account.get("name", ""))
+            category = account.get("category")
+            targets = (
+                TARGETS_BY_CATEGORY.get(category, {})
+                if isinstance(category, str)
+                else {}
+            )
+            for holding in account.get("holdings", []):
+                if not isinstance(holding, dict):
+                    continue
+                ticker = holding.get("ticker")
+                normalized.append(
+                    {
+                        "account": account_name,
+                        "ticker": ticker,
+                        "shares": holding.get("shares"),
+                        "price": holding.get("price"),
+                        "market_value": holding.get("market_value"),
+                        "avg_cost": holding.get("avg_cost"),
+                        "unrealized_gain": holding.get("unrealized_gain"),
+                        "unrealized_gain_pct": holding.get("unrealized_gain_pct"),
+                        "actual_pct": holding.get("actual_pct"),
+                        "target_pct": targets.get(ticker)
+                        if isinstance(ticker, str)
+                        else None,
+                    }
+                )
+        return normalized
+
+    legacy_holdings = brokerage.get("holdings", [])
+    if not isinstance(legacy_holdings, list):
+        return []
+
+    return [
+        {
+            "account": str(holding.get("account", "")),
+            "ticker": holding.get("ticker"),
+            "shares": holding.get("shares"),
+            "price": holding.get("current_price"),
+            "market_value": holding.get("market_value"),
+            "avg_cost": holding.get("avg_cost"),
+            "unrealized_gain": holding.get("unrealized_gain"),
+            "unrealized_gain_pct": holding.get("unrealized_gain_pct"),
+            "actual_pct": holding.get("actual_weight"),
+            "target_pct": holding.get("target_weight"),
+        }
+        for holding in legacy_holdings
+        if isinstance(holding, dict)
+    ]
+
+
+def _transaction_description(txn: dict[str, Any]) -> str:
+    """Return the best available transaction description."""
+    for key in ("description", "name", "memo"):
+        value = txn.get(key)
+        if value:
+            return str(value)
+    return ""
 
 
 def _fmt_dollar(val: float | int | None) -> str:
@@ -197,9 +272,9 @@ def _fmt_pct(val: float | int | None) -> str:
 def main() -> None:
     """Update finance object body with data tables.
 
-    Reads ``/tmp/daily_brief_state.json`` for the finance object ID and
-    ``/tmp/daily_brief_fm_output.json`` for cached FM data.  Called by the
-    Phase 2 LLM as its final step to place data tables below editorial.
+    Reads the private runtime state file for the finance object ID and cached
+    FM data.  Called by the Phase 2 LLM as its final step to place data tables
+    below editorial.
     """
     logging.basicConfig(
         level=logging.WARNING,

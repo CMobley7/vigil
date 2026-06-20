@@ -20,7 +20,9 @@ created by Phase 1.
 
 STEPS:
 
-1. STATE FILE HANDOFF — Read /tmp/daily_brief_state.json.
+1. STATE FILE HANDOFF — Read `$VIGIL_RUNTIME_DIR/daily_brief_state.json`.
+   If `VIGIL_RUNTIME_DIR` is unset, use `$XDG_RUNTIME_DIR/vigil` when
+   available, otherwise `$VIGIL_DATA_DIR/runtime`.
    → If found: extract space_id, parent_object_id, and sub_objects dict.
      Proceed to Step 2.
    → If missing: re-run `vigil brief`.
@@ -52,7 +54,7 @@ STEPS:
    their existing draft is already sufficient.
 
 5. FINANCIAL EDITORIAL — Read the financial monitor output cached at
-   /tmp/daily_brief_fm_output.json (written by Phase 1 alongside the state
+   `$VIGIL_RUNTIME_DIR/daily_brief_fm_output.json` (written by Phase 1 alongside the state
    file — avoids re-running `vigil.financial.monitor`, which is expensive due to
    API calls to SnapTrade, FRED, and yfinance). Parse the JSON and write two
    sections, then UPDATE the empty 📈 Stocks & Finances object
@@ -71,7 +73,7 @@ STEPS:
    The object is empty at this point — Phase 1 created it but left it
    unpopulated. Step 9 will append the data tables below your editorial.
 
-   If /tmp/daily_brief_fm_output.json is missing (Phase 1 finance step
+   If `$VIGIL_RUNTIME_DIR/daily_brief_fm_output.json` is missing (Phase 1 finance step
    failed), run `python -m vigil.financial.monitor`
    as a fallback.
 
@@ -96,7 +98,7 @@ STEPS:
      python -m vigil.anytype.finance
    This updates the finance object body with portfolio, account balances,
    and transaction tables BELOW the editorial content you added in Step 5.
-   The data is read from /tmp/daily_brief_fm_output.json (cached by
+   The data is read from `$VIGIL_RUNTIME_DIR/daily_brief_fm_output.json` (cached by
    Phase 1). If this step fails, log the error and continue — the
    editorial is already delivered.
 

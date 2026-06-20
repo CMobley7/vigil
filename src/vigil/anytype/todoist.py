@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from vigil.anytype.client import md_bullet, md_heading, md_paragraph
+from vigil.clock import local_today_iso
 from vigil.config import TODOIST_API_TOKEN
 
 logger = logging.getLogger(__name__)
@@ -48,11 +49,13 @@ def fetch_todoist_tasks() -> list[dict[str, Any]]:
     tasks_raw: list[dict[str, Any]] = resp.json()
     tasks: list[dict[str, Any]] = []
 
+    today = local_today_iso()
+
     for task in tasks_raw:
         due = task.get("due") or {}
         due_date = due.get("date", "")
         due_string = due.get("string", "")
-        is_overdue = due.get("is_recurring", False) is False and bool(due_date)
+        is_overdue = bool(due_date) and due_date < today
 
         tasks.append(
             {

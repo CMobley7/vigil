@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -104,3 +105,23 @@ class TestFetchTodoistTasks:
         assert len(tasks) == 2
         assert tasks[0]["content"] == "High priority"
         assert tasks[1]["content"] == "Low priority"
+
+    @patch("vigil.anytype.todoist.TODOIST_API_TOKEN", "test-token")
+    @patch("vigil.anytype.todoist.httpx.get")
+    def test_today_task_is_not_marked_overdue(self, mock_get: MagicMock) -> None:
+        """A non-recurring task due today belongs under today's tasks."""
+        today = datetime.now(tz=UTC).date().isoformat()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = [
+            {
+                "content": "Take medication",
+                "priority": 4,
+                "due": {"date": today, "string": "today"},
+            },
+        ]
+        mock_resp.raise_for_status.return_value = None
+        mock_get.return_value = mock_resp
+
+        tasks = fetch_todoist_tasks()
+
+        assert tasks[0]["is_overdue"] is False

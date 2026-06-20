@@ -92,6 +92,20 @@ OFX_BANKS_CONFIG: list[dict[str, Any]] = safe_json("OFX_BANKS_CONFIG", "[]")
 # Data directory root — all file-based config paths derive from this
 # ---------------------------------------------------------------------------
 VIGIL_DATA_DIR = Path(os.environ.get("VIGIL_DATA_DIR", "data"))
+VIGIL_TIMEZONE = os.environ.get(
+    "VIGIL_TIMEZONE",
+    os.environ.get("WEATHER_TZ", "America/New_York"),
+)
+
+_XDG_RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR")
+VIGIL_RUNTIME_DIR = Path(
+    os.environ.get(
+        "VIGIL_RUNTIME_DIR",
+        str(Path(_XDG_RUNTIME_DIR) / "vigil")
+        if _XDG_RUNTIME_DIR
+        else str(VIGIL_DATA_DIR / "runtime"),
+    )
+)
 
 # Directory for manually downloaded QFX/OFX statement files (e.g., Chase credit cards)
 OFX_STATEMENTS_DIR = os.environ.get("OFX_STATEMENTS_DIR", "")

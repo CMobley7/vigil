@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vigil.anytype.writer import _FM_CACHE_FILE, _STATE_FILE, main
+from vigil.anytype.writer import main
 
 
 def _mock_client() -> MagicMock:
@@ -22,6 +23,56 @@ def _mock_client() -> MagicMock:
 
 class TestMain:
     """Tests for the anytype_writer main orchestrator."""
+
+    @patch("vigil.anytype.writer.ANYTYPE_SPACE_ID", "space-123")
+    @patch("vigil.anytype.writer.ANYTYPE_API_KEY", "test-key")
+    @patch("vigil.anytype.writer.AnytypeClient")
+    @patch("vigil.anytype.writer.extract_today_reading")
+    @patch("vigil.anytype.writer.fetch_weather")
+    @patch("vigil.anytype.writer.fetch_todoist_tasks")
+    @patch("vigil.anytype.writer.check_birthdays_today")
+    @patch("vigil.anytype.writer.subprocess.check_output")
+    def test_runtime_files_are_private(
+        self,
+        mock_subprocess: MagicMock,
+        mock_birthdays: MagicMock,
+        mock_todoist: MagicMock,
+        mock_weather: MagicMock,
+        mock_bible: MagicMock,
+        mock_client_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """State and financial cache files must not be world-readable."""
+        client = _mock_client()
+        mock_client_cls.return_value = client
+
+        mock_bible.return_value = {
+            "morning_devotional": {"day": "Day 1", "text": "Text"},
+            "bible_reading": {
+                "reference": "Gen 1",
+                "esv_text": "In the beginning",
+                "study_notes": {},
+            },
+        }
+        mock_weather.return_value = {"today_hourly": [], "ten_day_forecast": []}
+        mock_todoist.return_value = []
+        mock_birthdays.return_value = []
+        mock_subprocess.return_value = json.dumps(
+            {"brokerage_data": {}, "bank_data": {}}
+        )
+
+        state_path = tmp_path / "runtime" / "state.json"
+        fm_path = tmp_path / "runtime" / "fm.json"
+
+        with (
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
+        ):
+            main()
+
+        assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(fm_path.stat().st_mode) == 0o600
 
     @patch("vigil.anytype.writer.ANYTYPE_SPACE_ID", "space-123")
     @patch("vigil.anytype.writer.ANYTYPE_API_KEY", "test-key")
@@ -64,8 +115,8 @@ class TestMain:
         fm_path = tmp_path / "fm.json"
 
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -108,8 +159,8 @@ class TestMain:
         fm_path = tmp_path / "fm.json"
 
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -154,8 +205,8 @@ class TestMain:
         fm_path = tmp_path / "fm.json"
 
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -205,8 +256,8 @@ class TestMain:
         fm_path = tmp_path / "fm.json"
 
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -264,8 +315,8 @@ class TestMain:
         state_path = tmp_path / "state.json"
         fm_path = tmp_path / "fm.json"
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -317,8 +368,8 @@ class TestMain:
         state_path = tmp_path / "state.json"
         fm_path = tmp_path / "fm.json"
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -367,8 +418,8 @@ class TestMain:
         state_path = tmp_path / "state.json"
         fm_path = tmp_path / "fm.json"
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -420,8 +471,8 @@ class TestMain:
         state_path = tmp_path / "state.json"
         fm_path = tmp_path / "fm.json"
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 
@@ -463,8 +514,8 @@ class TestMain:
         fm_path = tmp_path / "fm.json"
 
         with (
-            patch.object(type(_STATE_FILE), "write_text", state_path.write_text),
-            patch.object(type(_FM_CACHE_FILE), "write_text", fm_path.write_text),
+            patch("vigil.anytype.writer._STATE_FILE", state_path),
+            patch("vigil.anytype.writer._FM_CACHE_FILE", fm_path),
         ):
             main()
 

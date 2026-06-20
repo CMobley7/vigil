@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from vigil.anytype.client import md_heading, md_paragraph
+from vigil.clock import local_today_mmdd, local_year
 from vigil.config import BIRTHDAY_USE_LLM, CONTACTS_PATH, OPENROUTER_API_KEY
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def check_birthdays_today(
         logger.warning("Failed to read contacts: %s", exc)
         return []
 
-    today_mmdd = datetime.now(tz=UTC).strftime("%m-%d")
+    today_mmdd = local_today_mmdd()
     matches: list[dict[str, Any]] = []
 
     for contact in contacts:
@@ -58,7 +58,7 @@ def check_birthdays_today(
         # birthday format: YYYY-MM-DD → extract MM-DD
         if birthday[5:] == today_mmdd:
             birth_year = int(birthday[:4])
-            age = datetime.now(tz=UTC).year - birth_year
+            age = local_year() - birth_year
             matches.append({**contact, "age": age})
 
     return matches
